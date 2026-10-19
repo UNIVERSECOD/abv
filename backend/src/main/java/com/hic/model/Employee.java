@@ -88,6 +88,9 @@ public class Employee {
     @Column(name = "annual_leave_balance")
     private Integer annualLeaveBalance;
 
+    @Column(name = "leave_balance_start_date", nullable = false)
+    private LocalDate leaveBalanceStartDate = com.hic.util.AppTimeZone.today();
+
     @Column(name = "father_name")
     private String fatherName;
 

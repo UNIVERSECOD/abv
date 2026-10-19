@@ -68,6 +68,7 @@ export interface Employee {
   contractEndDate?: string
   annualLeaveDuration?: number
   annualLeaveBalance?: number
+  leaveBalanceStartDate?: string
   groupName?: string
   salary?: number
   hourlyRate?: number

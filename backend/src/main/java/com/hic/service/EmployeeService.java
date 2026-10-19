@@ -444,6 +444,7 @@ public class EmployeeService {
         dto.setContractEndDate(employee.getContractEndDate());
         dto.setAnnualLeaveDuration(employee.getAnnualLeaveDuration());
         dto.setAnnualLeaveBalance(employee.getAnnualLeaveBalance());
+        dto.setLeaveBalanceStartDate(employee.getLeaveBalanceStartDate());
         dto.setFatherName(employee.getFatherName());
         dto.setGroupName(employee.getGroupName());
         dto.setSalary(employee.getSalary());

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import PermissionAssignmentPage from './PermissionAssignmentPage.tsx'
-import { leaveApi, LeavePayload, LeaveRequest, LeaveStatus, LeaveType } from '../api/leaveApi.ts'
+import { leaveApi, LeaveBalance, LeavePayload, LeaveRequest, LeaveStatus, LeaveType } from '../api/leaveApi.ts'
 import { employeeApi } from '../api/employeeApi.ts'
 import { Employee } from '../types'
 import { getApiErrorMessage } from '../utils/apiError.ts'
@@ -194,6 +194,7 @@ function LeaveModal({
 }
 
 function LeavesPanel() {
+  const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [types, setTypes] = useState<LeaveType[]>([])
@@ -211,10 +212,11 @@ function LeavesPanel() {
     setLoading(true)
     setError('')
     try {
-      const [leaveRes, typeRes, employeeRes] = await Promise.all([
+      const [leaveRes, typeRes, employeeRes, balanceRes] = await Promise.all([
         leaveApi.getAll(),
         leaveApi.getTypes(),
         employeeApi.getAll(0, 500),
+        leaveApi.getBalances(),
       ])
       const staff = [...employeeRes.data.content]
       for (let page = 1; page < employeeRes.data.totalPages; page++) {
@@ -224,6 +226,7 @@ function LeavesPanel() {
       setLeaves(leaveRes.data.data)
       setTypes(typeRes.data.data)
       setEmployees(staff)
+      setBalances(balanceRes.data.data)
     } catch (e) {
       setError(getApiErrorMessage(e, 'Məzuniyyətləri yükləmək mümkün olmadı'))
     } finally {
@@ -339,6 +342,35 @@ function LeavesPanel() {
         </p>
       )}
       {!loading && !types.length && <p className="text-sm text-amber-700">Məzuniyyət növü tapılmadı.</p>}
+      {!loading && !error && (
+        <section className="rounded-md border border-slate-200 bg-white p-4">
+          <h3 className="font-semibold">Məzuniyyət balansı</h3>
+          <p className="my-2 text-sm text-slate-500">
+            Başlanğıc qalığından yalnız təsdiqlənmiş illik məzuniyyət çıxılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
+            Bu gün istifadə olunana daxildir; gələcək günlər planlaşdırılandır. Günlər təqvimlə sayılır, bayramlar çıxılmır.
+            İllik günlər avtomatik əlavə edilmir. Başlanğıc qalığı işçi kartında düzəldilə bilər.
+          </p>
+          <div className="max-h-80 overflow-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-slate-50"><tr>
+                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'İstifadə olunan', 'Planlaşdırılan', 'Qalan', 'Plan çıxıldıqdan sonra'].map(h =>
+                  <th className="whitespace-nowrap p-3" key={h}>{h}</th>)}
+              </tr></thead>
+              <tbody>{balances.filter(b => `${b.employeeName} ${b.employeeCode}`.toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))).map(b => (
+                <tr className="border-t border-slate-100" key={b.employeeId}>
+                  <td className="p-3">{b.employeeName}<div className="text-xs text-slate-500">{b.employeeCode}</div></td>
+                  <td className="whitespace-nowrap p-3">{b.startDate}</td>
+                  {[b.openingDays, b.usedDays, b.plannedDays, b.remainingDays, b.availableDays].map((value, index) => (
+                    <td className={`p-3 ${value !== null && value < 0 ? 'font-semibold text-red-600' : ''}`} key={index}>
+                      {value === null ? 'Qalıq daxil edilməyib' : `${value} gün`}
+                    </td>
+                  ))}
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        </section>
+      )}
       {importErrors.length > 0 && (
         <div role="alert" className="max-h-64 overflow-auto rounded-md bg-red-50 p-4 text-sm text-red-700">
           <p className="mb-2 font-semibold">Heç bir məlumat yazılmadı. Faylı düzəldib yenidən import edin.</p>

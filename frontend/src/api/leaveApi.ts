@@ -3,6 +3,17 @@ import { ApiResponse } from '../types'
 import { DataImportResult } from './dataTransferApi.ts'
 
 export type LeaveStatus = 'APPROVED' | 'PENDING' | 'REJECTED'
+export interface LeaveBalance {
+  employeeId: number
+  employeeCode: string
+  employeeName: string
+  startDate: string
+  openingDays: number | null
+  usedDays: number
+  plannedDays: number
+  remainingDays: number | null
+  availableDays: number | null
+}
 export interface LeaveType {
   id: number
   leaveName: string
@@ -23,6 +34,7 @@ export interface LeaveRequest {
 export type LeavePayload = Pick<LeaveRequest, 'employeeId' | 'leaveTypeId' | 'startDate' | 'endDate' | 'status'>
 
 export const leaveApi = {
+  getBalances: () => client.get<ApiResponse<LeaveBalance[]>>('/annual-leave/balances'),
   getAll: () => client.get<ApiResponse<LeaveRequest[]>>('/leaves'),
   getTypes: () => client.get<ApiResponse<LeaveType[]>>('/leaves/types'),
   create: (data: LeavePayload) => client.post<ApiResponse<LeaveRequest>>('/leaves', data),

@@ -17,6 +17,12 @@ import java.util.List;
 public class AnnualLeaveController {
 
     private final AnnualLeaveService annualLeaveService;
+    private final com.hic.service.LeaveBalanceService leaveBalanceService;
+
+    @GetMapping("/balances")
+    public ResponseEntity<ApiResponse<List<com.hic.service.LeaveBalanceService.Balance>>> balances() {
+        return ResponseEntity.ok(ApiResponse.success("Məzuniyyət balansları", leaveBalanceService.getAll()));
+    }
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<AnnualLeaveBalanceDTO>>> getAll(

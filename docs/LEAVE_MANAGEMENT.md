@@ -32,4 +32,11 @@ Endpoints are under `/api/leaves`: existing GET/POST, new `PUT /{id}`, existing 
 
 ## Verification
 
+### Automatic opening-balance projection (2026-10-19)
+
+`GET /api/annual-leave/balances` is HR-only and tenant-scoped. V043 preserves the existing employee `annual_leave_balance` as the opening balance and adds its Baku activation date. Only approved `ANNUAL` requests on/after that date debit it, including already-entered future requests. Past days before activation are never debited again. New employees receive their own creation-date anchor. Existing annual-leave ledger rows are left intact; the new opening projection does not reinterpret their manual historical usage.
+
+Used includes today; planned is after today. Remaining = opening minus used; available = remaining minus planned. Both dates are inclusive and calendar days are used, including weekends; holiday integration/exclusion is deferred by user request. Overlapping legacy requests count each date once. Cancellation, editing, deletion and atomic Excel imports are reflected on the next read without synchronization writes. Missing opening balances stay unknown, and negative balances stay visible. No automatic annual replenishment/proration or hard balance enforcement is introduced. Editing the employee's opening field corrects the original opening amount, not today's remaining balance; it does not reset the date. The UI labels this explicitly.
+
+
 Unit/API tests cover tenant references, date/overlap/duplicate rejection, cancellation, template round-trip, all-or-nothing import, HR-code mapping, status export, and Tabel/Excel `M` across month boundaries. A separate Docker PostgreSQL/backend/frontend environment with synthetic data verified create/edit/cancel, template download and filled-template multipart import, duplicate rejection, full export, and live Tabel projection. Browser checks verified sidebar/tab navigation, inline validation, responsive layout and successful form submission. Test backend/database were on an internal network with no physical-device access.

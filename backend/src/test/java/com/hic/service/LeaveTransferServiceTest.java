@@ -95,6 +95,16 @@ class LeaveTransferServiceTest {
         verify(leaves, never()).create(any());
     }
 
+    @Test void insufficientBalanceThrowsWithExcelRowAndAbortsTheTransaction() {
+        references();
+        doThrow(new com.hic.exception.BadRequestException("Məzuniyyət balansı kifayət etmir"))
+                .when(leaves).create(any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.importFile(file(List.of(
+                row("HR-11", "2026-11-01", "2026-11-03", "APPROVED")))))
+                .isInstanceOf(com.hic.exception.BadRequestException.class)
+                .hasMessageContaining("Sətir 2").hasMessageContaining("Heç bir məlumat yazılmadı");
+    }
+
     @Test
     void duplicateOrOverlappingRowsAreNotInserted() {
         references();

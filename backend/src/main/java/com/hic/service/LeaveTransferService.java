@@ -63,8 +63,14 @@ public class LeaveTransferService {
             if (!table.hasHeader(header)) throw new BadRequestException("Başlıq yoxdur: " + header);
         }
         var staff = employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId);
+        var requestedCodes = table.rows().stream().map(row -> row.get("Əməkdaş ID").toLowerCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        leaves.lockEmployees(tenantId, staff.stream()
+                .filter(e -> requestedCodes.contains(text(e.getEmployeeId()).toLowerCase(Locale.ROOT)))
+                .map(Employee::getId).toList());
         var leaveTypes = types.findByTenantId(tenantId);
         var requests = new ArrayList<LeaveRequestDTO>();
+        var requestRows = new ArrayList<Integer>();
         var errors = new ArrayList<DataImportErrorDTO>();
         for (var row : table.rows()) {
             try {
@@ -93,11 +99,22 @@ public class LeaveTransferService {
                     throw new BadRequestException("Faylda eyni əməkdaşın məzuniyyət tarixləri üst-üstə düşür");
                 }
                 requests.add(dto);
+                requestRows.add(row.rowNumber());
             } catch (BadRequestException ex) {
                 errors.add(new DataImportErrorDTO(row.rowNumber(), "Məzuniyyət", ex.getMessage()));
             }
         }
-        if (errors.isEmpty()) requests.forEach(leaves::create);
+        if (errors.isEmpty()) {
+            for (int i = 0; i < requests.size(); i++) {
+                try {
+                    leaves.create(requests.get(i));
+                } catch (BadRequestException ex) {
+                    // Throw out of the transaction so all earlier rows roll back as well.
+                    throw new BadRequestException("Sətir " + requestRows.get(i) + ": " + ex.getMessage()
+                            + " Heç bir məlumat yazılmadı.");
+                }
+            }
+        }
         return DataImportResultDTO.builder().entity("leaves").totalRows(table.rows().size())
                 .importedRows(errors.isEmpty() ? requests.size() : 0)
                 .rejectedRows(errors.isEmpty() ? 0 : table.rows().size()).errors(errors).build();

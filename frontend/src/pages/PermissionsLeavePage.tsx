@@ -134,7 +134,7 @@ function LeaveModal({
             )}
           </label>
           <p className="text-sm text-slate-500">
-            Ödənişli məzuniyyət balansdan çıxılır. Ödənişsiz məzuniyyət balansı azaltmır, günləri ayrıca sayılır. Hər ikisi Tabeldə M göstərilir.
+            Ödənişli məzuniyyət balansdan çıxılır və qalan balansdan çox təsdiqlənə bilməz. Ödənişsiz məzuniyyət balansı azaltmır, günləri ayrıca sayılır. Hər ikisi Tabeldə M göstərilir.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="text-sm">

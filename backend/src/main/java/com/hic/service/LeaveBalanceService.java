@@ -63,7 +63,7 @@ public class LeaveBalanceService {
                 opening, used, opening == null ? null : opening - used, unpaidDays);
     }
 
-    private static int countDays(List<LeaveRequest> requests, LocalDate openingDate) {
+    static int countDays(List<LeaveRequest> requests, LocalDate openingDate) {
         // Merge intervals before counting: legacy overlapping records must not debit twice.
         List<LocalDate[]> intervals = requests.stream()
                 .filter(r -> r.getStatus() == LeaveRequest.LeaveStatus.APPROVED)

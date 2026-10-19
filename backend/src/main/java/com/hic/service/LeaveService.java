@@ -28,6 +28,7 @@ public class LeaveService {
     private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeeRepository employeeRepository;
     private final LeaveTypeRepository leaveTypeRepository;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public List<LeaveRequestDTO> getAll() {
         Long tenantId = requireTenantId();
@@ -72,7 +73,9 @@ public class LeaveService {
     @Transactional
     public LeaveRequestDTO create(LeaveRequestDTO dto) {
         Long tenantId = requireTenantId();
+        lockEmployees(tenantId, List.of(requireEmployeeId(dto.getEmployeeId())));
         validate(dto, tenantId, null);
+        validatePaidBalance(dto, tenantId, null);
         LeaveRequest req = new LeaveRequest();
         req.setEmployeeId(dto.getEmployeeId());
         req.setLeaveTypeId(dto.getLeaveTypeId());
@@ -89,12 +92,14 @@ public class LeaveService {
 
     @Transactional
     public LeaveRequestDTO updateStatus(Long id, LeaveStatus status, Long approvedBy) {
-        LeaveRequest req = requireLeaveInTenant(id);
+        LeaveRequest req = lockLeaveInTenant(id);
+        lockEmployees(requireTenantId(), List.of(req.getEmployeeId()));
         if (status == null) throw new BadRequestException("Vəziyyəti seçin");
         if (status == LeaveStatus.APPROVED) {
             LeaveRequestDTO dto = toDTO(req);
             dto.setStatus(status);
             validate(dto, requireTenantId(), id);
+            validatePaidBalance(dto, requireTenantId(), id);
         }
         req.setStatus(status);
         if (status == LeaveStatus.APPROVED) {
@@ -109,8 +114,56 @@ public class LeaveService {
 
     @Transactional
     public void delete(Long id) {
-        LeaveRequest req = requireLeaveInTenant(id);
+        LeaveRequest req = lockLeaveInTenant(id);
+        lockEmployees(requireTenantId(), List.of(req.getEmployeeId()));
         leaveRequestRepository.deleteById(req.getId());
+    }
+
+    private LeaveRequest lockLeaveInTenant(Long id) {
+        return leaveRequestRepository.lockInTenant(id, requireTenantId())
+                .orElseThrow(() -> new ResourceNotFoundException("LeaveRequest", id));
+    }
+
+    private Long requireEmployeeId(Long id) {
+        if (id == null) throw new BadRequestException("Əməkdaş seçin");
+        return id;
+    }
+
+    // Serialize balance-changing operations per employee; sorted order also protects bulk imports.
+    void lockEmployees(Long tenantId, List<Long> employeeIds) {
+        employeeIds.stream().distinct().sorted().forEach(id -> {
+            var employee = employeeRepository.lockForLeave(tenantId, id)
+                    .orElseThrow(() -> new BadRequestException("Əməkdaş tapılmadı"));
+            // Import may have loaded staff before waiting for this lock: discard that stale snapshot.
+            entityManager.refresh(employee, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        });
+    }
+
+    private void validatePaidBalance(LeaveRequestDTO dto, Long tenantId, Long excludedId) {
+        if (dto.getStatus() != LeaveStatus.APPROVED) return;
+        var annualTypeIds = leaveTypeRepository.findByTenantId(tenantId).stream()
+                .filter(t -> "ANNUAL".equalsIgnoreCase(t.getLeaveCode()))
+                .map(LeaveType::getId).collect(Collectors.toSet());
+        if (!annualTypeIds.contains(dto.getLeaveTypeId())) return;
+        var employee = employeeRepository.findByTenantIdAndId(tenantId, dto.getEmployeeId())
+                .orElseThrow(() -> new BadRequestException("Əməkdaş tapılmadı"));
+        var candidate = new LeaveRequest();
+        candidate.setStartDate(dto.getStartDate()); candidate.setEndDate(dto.getEndDate());
+        candidate.setStatus(LeaveStatus.APPROVED);
+        int requested = LeaveBalanceService.countDays(List.of(candidate), employee.getLeaveBalanceStartDate());
+        if (requested == 0) return; // Historical dates before the opening balance do not debit it.
+        if (employee.getAnnualLeaveBalance() == null) {
+            throw new BadRequestException("Məzuniyyətin başlanğıc qalığı daxil edilməyib. Əvvəl işçi kartında qalığı daxil edin.");
+        }
+        var existing = leaveRequestRepository.findByTenantIdAndEmployeeId(tenantId, dto.getEmployeeId()).stream()
+                .filter(r -> !java.util.Objects.equals(r.getId(), excludedId))
+                .filter(r -> annualTypeIds.contains(r.getLeaveTypeId())).toList();
+        int remaining = employee.getAnnualLeaveBalance()
+                - LeaveBalanceService.countDays(existing, employee.getLeaveBalanceStartDate());
+        if (requested > remaining) {
+            throw new BadRequestException("Məzuniyyət balansı kifayət etmir. Qalıq: " + remaining
+                    + " gün, tələb olunan: " + requested + " gün. Ödənişsiz məzuniyyət seçə bilərsiniz.");
+        }
     }
 
     private LeaveRequest requireLeaveInTenant(Long id) {
@@ -149,8 +202,11 @@ public class LeaveService {
 
     @Transactional
     public LeaveRequestDTO update(Long id, LeaveRequestDTO dto) {
-        LeaveRequest req = requireLeaveInTenant(id);
+        LeaveRequest req = lockLeaveInTenant(id);
+        lockEmployees(requireTenantId(), List.of(req.getEmployeeId(), requireEmployeeId(dto.getEmployeeId())));
+        if (dto.getStatus() == null) dto.setStatus(req.getStatus());
         validate(dto, requireTenantId(), id);
+        validatePaidBalance(dto, requireTenantId(), id);
         req.setEmployeeId(dto.getEmployeeId());
         req.setLeaveTypeId(dto.getLeaveTypeId());
         req.setStartDate(dto.getStartDate());

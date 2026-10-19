@@ -13,6 +13,10 @@ import java.util.List;
 @Repository
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from LeaveRequest r where r.id = :id and r.tenantId = :tenantId")
+    java.util.Optional<LeaveRequest> lockInTenant(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
     java.util.Optional<LeaveRequest> findByIdAndTenantId(Long id, Long tenantId);
 
     // Tenant-aware methods

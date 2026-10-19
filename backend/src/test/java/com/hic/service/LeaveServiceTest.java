@@ -39,6 +39,8 @@ class LeaveServiceTest {
     private EmployeeRepository employeeRepository;
     @Mock
     private LeaveTypeRepository leaveTypeRepository;
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
 
     @InjectMocks
     private LeaveService leaveService;
@@ -60,6 +62,7 @@ class LeaveServiceTest {
         employee.setEmployeeId("HR-11"); employee.setFirstName("Test"); employee.setLastName("Person");
         var type = new LeaveType(); type.setId(3L); type.setTenantId(7L); type.setLeaveName("İllik məzuniyyət");
         when(employeeRepository.findByTenantIdAndId(7L, 11L)).thenReturn(Optional.of(employee));
+        when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(employee));
         when(leaveTypeRepository.findByTenantId(7L)).thenReturn(List.of(type));
     }
 
@@ -88,6 +91,7 @@ class LeaveServiceTest {
     @Test
     void createRejectsLeaveTypeFromAnotherTenant() {
         TenantContext.setTenantId(7L);
+        when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(new Employee()));
         when(employeeRepository.findByTenantIdAndId(7L, 11L)).thenReturn(Optional.of(new Employee()));
         assertThrows(BadRequestException.class, () -> leaveService.create(payload()));
         verify(leaveRequestRepository, never()).save(any());
@@ -129,7 +133,8 @@ class LeaveServiceTest {
         TenantContext.setTenantId(7L);
         var existing = new LeaveRequest(); existing.setId(8L); existing.setTenantId(7L);
         existing.setEmployeeId(11L); existing.setLeaveTypeId(3L); existing.setStatus(LeaveStatus.APPROVED);
-        when(leaveRequestRepository.findByIdAndTenantId(8L, 7L)).thenReturn(Optional.of(existing));
+        when(leaveRequestRepository.lockInTenant(8L, 7L)).thenReturn(Optional.of(existing));
+        when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(new Employee()));
         when(leaveRequestRepository.save(any())).thenAnswer(call -> call.getArgument(0));
         var result = leaveService.updateStatus(8L, LeaveStatus.REJECTED, 999L);
         assertThat(result.getStatus()).isEqualTo(LeaveStatus.REJECTED);

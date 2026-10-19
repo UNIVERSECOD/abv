@@ -28,6 +28,17 @@ Template columns:
 
 The template includes employee/type/status choices and an employee reference sheet. XLSX/XLS import uses the existing 5 MB / 5,000 row limits. Every row is validated before writes. Any invalid row rejects the entire import and returns the physical Excel row number; there is no partial import. Re-importing exported or previously imported existing records does not create duplicates.
 
+## Balance acceptance verification — 2026-10-20
+
+Tested the installed MCG backend/frontend images against a fresh PostgreSQL 15 database on a separate internal Docker network. Only the test frontend had a host port; no customer database/config/photos were copied, no devices were configured, and the backend's ISAPI destination was an unreachable loopback port.
+
+- 27 API assertions passed: preserved opening balance; approved current/future split; date, employee and type edits; cancellation/reapproval/deletion; pending and sick leave exclusion; activation-date clipping; year boundary; visible negative/unknown balances; overlap rejection; tenant isolation; unauthenticated and employee-role denial; real XLSX import, duplicate rejection, all-or-nothing invalid import and imported cancellation.
+- Browser form submission for a 20-day opening balance and inclusive 20–22 October leave immediately displayed used 1, planned 2, remaining 19, available 17. Cancelling through the confirmation dialog immediately restored used/planned 0 and remaining/available 20. Cancelled records remained in history.
+- Tabel approval displayed M without credited work hours; cancellation restored the original cell and balance. Full Excel export remained downloadable. The persisted opening balance was still 20 after these operations.
+- Complete backend suite: 537 tests, zero failures/errors. Frontend: 11 tests passed; lint and production build passed. No application code correction was necessary. ISAPI/physical-device tests were not run for this balance-only verification.
+
+Local synthetic evidence is kept under ignored `runtime/audit/`: `verify-leave-balances.ps1`, `verify-balance-tabel.ps1`, `leave-balance-created.png` and `leave-balance-cancelled.png`. Temporary test containers/network were removed after verification.
+
 Endpoints are under `/api/leaves`: existing GET/POST, new `PUT /{id}`, existing `PUT /{id}/status`, plus `GET /template`, `GET /export`, and multipart `POST /import` (`file`). Downloads are XLSX. No device operations are involved.
 
 ## Verification

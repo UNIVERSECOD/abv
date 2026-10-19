@@ -57,6 +57,24 @@ class LeaveTransferServiceTest {
         return List.of(employee, "Test Person", "FIN1234", "ANNUAL", start, end, status);
     }
 
+    @Test void importsPaidDisplayNameAlongsideLegacyAnnualCode() {
+        references();
+        var result = service.importFile(file(List.of(List.of("HR-11", "Test Person", "FIN1234",
+                "Ödənişli məzuniyyət", "2026-11-01", "2026-11-03", "APPROVED"))));
+        assertThat(result.getImportedRows()).isEqualTo(1);
+        verify(leaves).create(argThat(dto -> dto.getLeaveTypeId().equals(3L)));
+    }
+
+    @Test void importsUnpaidDisplayName() {
+        references();
+        var type = new LeaveType(); type.setId(4L); type.setLeaveCode("UNPAID"); type.setLeaveName("Ödənişsiz məzuniyyət");
+        when(types.findByTenantId(7L)).thenReturn(List.of(type));
+        var result = service.importFile(file(List.of(List.of("HR-11", "Test Person", "FIN1234",
+                "Ödənişsiz məzuniyyət", "2026-11-01", "2026-11-03", "APPROVED"))));
+        assertThat(result.getImportedRows()).isEqualTo(1);
+        verify(leaves).create(argThat(dto -> dto.getLeaveTypeId().equals(4L)));
+    }
+
     @Test
     void importsValidRowsUsingHrCodeAndDefaultsToApproved() {
         references();

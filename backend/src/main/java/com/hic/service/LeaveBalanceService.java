@@ -25,25 +25,45 @@ public class LeaveBalanceService {
 
     public record Balance(Long employeeId, String employeeCode, String employeeName,
                           LocalDate startDate, Integer openingDays, int usedDays,
-                          Integer remainingDays) { }
+                          Integer remainingDays, int unpaidDays) { }
 
     @Transactional(readOnly = true)
     public List<Balance> getAll() {
         Long tenant = TenantContext.getTenantId();
         if (tenant == null) throw new IllegalStateException("Tenant context is missing");
-        Set<Long> annualTypes = types.findByTenantId(tenant).stream()
+        List<LeaveType> leaveTypes = types.findByTenantId(tenant);
+        Set<Long> annualTypes = leaveTypes.stream()
                 .filter(t -> "ANNUAL".equalsIgnoreCase(t.getLeaveCode()))
                 .map(LeaveType::getId).collect(Collectors.toSet());
-        Map<Long, List<LeaveRequest>> approved = requests
-                .findByTenantIdAndStatus(tenant, LeaveRequest.LeaveStatus.APPROVED).stream()
+        Set<Long> unpaidTypes = leaveTypes.stream()
+                .filter(t -> "UNPAID".equalsIgnoreCase(t.getLeaveCode()))
+                .map(LeaveType::getId).collect(Collectors.toSet());
+        List<LeaveRequest> allApproved = requests.findByTenantIdAndStatus(tenant, LeaveRequest.LeaveStatus.APPROVED);
+        Map<Long, List<LeaveRequest>> approved = allApproved.stream()
                 .filter(r -> annualTypes.contains(r.getLeaveTypeId()))
                 .collect(Collectors.groupingBy(LeaveRequest::getEmployeeId));
+        Map<Long, List<LeaveRequest>> unpaid = allApproved.stream()
+                .filter(r -> unpaidTypes.contains(r.getLeaveTypeId()))
+                .collect(Collectors.groupingBy(LeaveRequest::getEmployeeId));
         return employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenant).stream()
-                .map(e -> calculate(e, approved.getOrDefault(e.getId(), List.of()))).toList();
+                .map(e -> calculate(e, approved.getOrDefault(e.getId(), List.of()),
+                        unpaid.getOrDefault(e.getId(), List.of()))).toList();
     }
 
     static Balance calculate(Employee employee, List<LeaveRequest> requests) {
-        LocalDate openingDate = employee.getLeaveBalanceStartDate();
+        return calculate(employee, requests, List.of());
+    }
+
+    static Balance calculate(Employee employee, List<LeaveRequest> paid, List<LeaveRequest> unpaid) {
+        int used = countDays(paid, employee.getLeaveBalanceStartDate());
+        int unpaidDays = countDays(unpaid, employee.getLeaveBalanceStartDate());
+        Integer opening = employee.getAnnualLeaveBalance();
+        return new Balance(employee.getId(), employee.getEmployeeId(),
+                employee.getLastName() + " " + employee.getFirstName(), employee.getLeaveBalanceStartDate(),
+                opening, used, opening == null ? null : opening - used, unpaidDays);
+    }
+
+    private static int countDays(List<LeaveRequest> requests, LocalDate openingDate) {
         // Merge intervals before counting: legacy overlapping records must not debit twice.
         List<LocalDate[]> intervals = requests.stream()
                 .filter(r -> r.getStatus() == LeaveRequest.LeaveStatus.APPROVED)
@@ -60,9 +80,6 @@ public class LeaveBalanceService {
             used += Math.toIntExact(java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1);
             last = end;
         }
-        Integer opening = employee.getAnnualLeaveBalance();
-        return new Balance(employee.getId(), employee.getEmployeeId(),
-                employee.getLastName() + " " + employee.getFirstName(), openingDate,
-                opening, used, opening == null ? null : opening - used);
+        return used;
     }
 }

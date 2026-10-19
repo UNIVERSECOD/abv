@@ -23,6 +23,12 @@ public class LeaveType {
     @Column(name = "leave_name", nullable = false)
     private String leaveName;
 
+    public String displayName() {
+        if ("ANNUAL".equalsIgnoreCase(leaveCode)) return "Ödənişli məzuniyyət";
+        if ("UNPAID".equalsIgnoreCase(leaveCode)) return "Ödənişsiz məzuniyyət";
+        return leaveName;
+    }
+
     @Column(name = "annual_entitlement")
     private Integer annualEntitlement;
 

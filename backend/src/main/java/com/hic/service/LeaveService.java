@@ -195,7 +195,7 @@ public class LeaveService {
             dto.setFinNumber(employee.getFinNumber());
         }
         var type = types.get(req.getLeaveTypeId());
-        if (type != null) dto.setLeaveTypeName(type.getLeaveName());
+        if (type != null) dto.setLeaveTypeName(type.displayName());
         return dto;
     }
 }

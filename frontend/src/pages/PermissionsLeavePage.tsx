@@ -17,6 +17,9 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
 const buttonClass =
   'rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50'
 
+const leaveTypeLabel = (type: LeaveType) =>
+  type.leaveCode === 'ANNUAL' ? 'Ödənişli məzuniyyət' : type.leaveCode === 'UNPAID' ? 'Ödənişsiz məzuniyyət' : type.leaveName
+
 function LeaveModal({
   initial,
   employees,
@@ -31,7 +34,8 @@ function LeaveModal({
   onClose: () => void
 }) {
   const [employeeId, setEmployeeId] = useState(initial?.employeeId ?? 0)
-  const [leaveTypeId, setLeaveTypeId] = useState(initial?.leaveTypeId ?? types[0]?.id ?? 0)
+  const choices = types.filter(t => ['ANNUAL', 'UNPAID'].includes(t.leaveCode) || t.id === initial?.leaveTypeId)
+  const [leaveTypeId, setLeaveTypeId] = useState(initial?.leaveTypeId ?? types.find(t => t.leaveCode === 'ANNUAL')?.id ?? 0)
   const [startDate, setStartDate] = useState(initial?.startDate ?? '')
   const [endDate, setEndDate] = useState(initial?.endDate ?? '')
   const [status, setStatus] = useState<LeaveStatus>(initial?.status ?? 'APPROVED')
@@ -117,9 +121,9 @@ function LeaveModal({
             Məzuniyyət növü
             <select className={inputClass} value={leaveTypeId} onChange={(e) => setLeaveTypeId(Number(e.target.value))}>
               <option value={0}>Seçin</option>
-              {types.map((t) => (
+              {choices.map((t) => (
                 <option key={t.id} value={t.id}>
-                  {t.leaveName}
+                  {leaveTypeLabel(t)}
                 </option>
               ))}
             </select>
@@ -129,6 +133,9 @@ function LeaveModal({
               </span>
             )}
           </label>
+          <p className="text-sm text-slate-500">
+            Ödənişli məzuniyyət balansdan çıxılır. Ödənişsiz məzuniyyət balansı azaltmır, günləri ayrıca sayılır. Hər ikisi Tabeldə M göstərilir.
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="text-sm">
               Başlanğıc tarixi
@@ -346,21 +353,21 @@ function LeavesPanel() {
         <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold">Məzuniyyət balansı</h3>
           <p className="my-2 text-sm text-slate-500">
-            Başlanğıc qalığından yalnız təsdiqlənmiş illik məzuniyyət çıxılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
+            Başlanğıc qalığından yalnız təsdiqlənmiş ödənişli (illik) məzuniyyət çıxılır. Ödənişsiz günlər ayrıca sayılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
             Gələcək tarixlər daxil olmaqla təsdiqlənmiş günlər dərhal balansdan çıxılır; ləğv edildikdə geri qayıdır. Günlər təqvimlə sayılır, bayramlar çıxılmır.
             İllik günlər avtomatik əlavə edilmir. Başlanğıc qalığı işçi kartında düzəldilə bilər.
           </p>
           <div className="max-h-80 overflow-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50"><tr>
-                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'İstifadə olunan', 'Qalan'].map(h =>
+                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'Ödənişli istifadə olunan', 'Qalan', 'Ödənişsiz günlər'].map(h =>
                   <th className="whitespace-nowrap p-3" key={h}>{h}</th>)}
               </tr></thead>
               <tbody>{balances.filter(b => `${b.employeeName} ${b.employeeCode}`.toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))).map(b => (
                 <tr className="border-t border-slate-100" key={b.employeeId}>
                   <td className="p-3">{b.employeeName}<div className="text-xs text-slate-500">{b.employeeCode}</div></td>
                   <td className="whitespace-nowrap p-3">{b.startDate}</td>
-                  {[b.openingDays, b.usedDays, b.remainingDays].map((value, index) => (
+                  {[b.openingDays, b.usedDays, b.remainingDays, b.unpaidDays].map((value, index) => (
                     <td className={`p-3 ${value !== null && value < 0 ? 'font-semibold text-red-600' : ''}`} key={index}>
                       {value === null ? 'Qalıq daxil edilməyib' : `${value} gün`}
                     </td>

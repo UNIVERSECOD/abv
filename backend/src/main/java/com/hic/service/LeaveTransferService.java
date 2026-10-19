@@ -37,7 +37,7 @@ public class LeaveTransferService {
             var staff = employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId);
             Map<String, List<String>> choices = new LinkedHashMap<>();
             choices.put("Əməkdaş ID", staff.stream().map(Employee::getEmployeeId).filter(Objects::nonNull).toList());
-            choices.put("Məzuniyyət növü", types.findByTenantId(tenantId).stream().map(LeaveType::getLeaveName).toList());
+            choices.put("Məzuniyyət növü", types.findByTenantId(tenantId).stream().map(LeaveType::displayName).toList());
             choices.put("Vəziyyət", List.of("Təsdiqlənib", "Gözləmədə", "Rədd edilib"));
             List<List<String>> reference = new ArrayList<>();
             reference.add(List.of("Əməkdaş ID", "Əməkdaş", "FIN"));
@@ -75,7 +75,8 @@ public class LeaveTransferService {
                     throw new BadRequestException("FIN seçilmiş əməkdaşa uyğun deyil");
                 }
                 var matchingTypes = leaveTypes.stream().filter(t -> t.getLeaveName().equalsIgnoreCase(row.get("Məzuniyyət növü"))
-                        || t.getLeaveCode().equalsIgnoreCase(row.get("Məzuniyyət növü"))).toList();
+                        || t.getLeaveCode().equalsIgnoreCase(row.get("Məzuniyyət növü"))
+                        || t.displayName().equalsIgnoreCase(row.get("Məzuniyyət növü"))).toList();
                 if (matchingTypes.size() != 1) throw new BadRequestException("Məzuniyyət növü tapılmadı və ya unikal deyil");
                 var dto = new LeaveRequestDTO();
                 dto.setEmployeeId(employee.getId());

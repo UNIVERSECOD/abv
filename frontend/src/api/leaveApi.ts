@@ -10,6 +10,7 @@ export interface LeaveBalance {
   startDate: string
   openingDays: number | null
   usedDays: number
+  unpaidDays: number
   remainingDays: number | null
 }
 export interface LeaveType {

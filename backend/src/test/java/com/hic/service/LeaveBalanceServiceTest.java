@@ -91,14 +91,43 @@ class LeaveBalanceServiceTest {
         var types = mock(LeaveTypeRepository.class);
         var annual = new LeaveType(); annual.setId(1L); annual.setLeaveCode("ANNUAL");
         var sick = new LeaveType(); sick.setId(2L); sick.setLeaveCode("SICK");
+        var unpaid = new LeaveType(); unpaid.setId(3L); unpaid.setLeaveCode("UNPAID");
         var sickLeave = leave("2026-10-19", "2026-10-20"); sickLeave.setLeaveTypeId(2L);
+        var unpaidLeave = leave("2026-11-01", "2026-11-03"); unpaidLeave.setLeaveTypeId(3L);
         when(employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(3L)).thenReturn(List.of(employee()));
-        when(types.findByTenantId(3L)).thenReturn(List.of(annual, sick));
-        when(requests.findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED)).thenReturn(List.of(sickLeave));
+        when(types.findByTenantId(3L)).thenReturn(List.of(annual, sick, unpaid));
+        when(requests.findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED)).thenReturn(List.of(sickLeave, unpaidLeave));
         try {
             TenantContext.setTenantId(3L);
-            assertEquals(20, new LeaveBalanceService(employees, requests, types).getAll().get(0).remainingDays());
+            var balance = new LeaveBalanceService(employees, requests, types).getAll().get(0);
+            assertEquals(20, balance.remainingDays());
+            assertEquals(0, balance.usedDays());
+            assertEquals(3, balance.unpaidDays());
         } finally { TenantContext.clear(); }
         verify(requests).findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED);
+    }
+
+    @Test void unpaidAccumulatesWithoutDebitingAndCancellationRemovesItsDays() {
+        var paid = leave("2026-11-01", "2026-11-05");
+        var unpaid = leave("2026-11-10", "2026-11-12");
+        var balance = LeaveBalanceService.calculate(employee(), List.of(paid), List.of(unpaid));
+        assertEquals(5, balance.usedDays());
+        assertEquals(15, balance.remainingDays());
+        assertEquals(3, balance.unpaidDays());
+        unpaid.setStatus(LeaveRequest.LeaveStatus.REJECTED);
+        balance = LeaveBalanceService.calculate(employee(), List.of(paid), List.of(unpaid));
+        assertEquals(15, balance.remainingDays());
+        assertEquals(0, balance.unpaidDays());
+    }
+
+    @Test void unpaidAtZeroBalanceStillCountsAndClipsToActivationWithoutDoubleCounting() {
+        Employee employee = employee(); employee.setAnnualLeaveBalance(0);
+        var overlap = leave("2026-10-19", "2026-10-22");
+        var pending = leave("2026-11-01", "2026-11-02"); pending.setStatus(LeaveRequest.LeaveStatus.PENDING);
+        var balance = LeaveBalanceService.calculate(employee, List.of(), List.of(
+                leave("2026-10-17", "2026-10-20"), overlap, overlap, pending));
+        assertEquals(0, balance.usedDays());
+        assertEquals(0, balance.remainingDays());
+        assertEquals(4, balance.unpaidDays());
     }
 }

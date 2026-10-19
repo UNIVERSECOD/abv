@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import { employeeApi } from '../api/employeeApi.ts'
 import { permissionApi } from '../api/permissionApi.ts'
@@ -232,7 +232,8 @@ function permissionStatusStyle(status: EmployeePermission['status']) {
   }
 }
 
-export default function PermissionAssignmentPage() {
+export default function PermissionAssignmentPage({ embedded = false }: { embedded?: boolean }) {
+  const Wrapper = embedded ? Fragment : Layout
   const [employees, setEmployees] = useState<Employee[]>([])
   const [permissionTypes, setPermissionTypes] = useState<PermissionType[]>([])
   const [permissions, setPermissions] = useState<EmployeePermission[]>([])
@@ -334,7 +335,7 @@ export default function PermissionAssignmentPage() {
   }
 
   return (
-    <Layout>
+    <Wrapper>
       <div className="space-y-5 p-6">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -409,6 +410,6 @@ export default function PermissionAssignmentPage() {
       </div>
 
       {showModal && <PermissionModal employees={employees.filter(employee => employee.employmentStatus === 'ACTIVE' || employee.id === editingPermission?.employeeId)} permissionTypes={permissionTypes} initial={editingPermission} onClose={() => setShowModal(false)} onSave={savePermission} />}
-    </Layout>
+    </Wrapper>
   )
 }

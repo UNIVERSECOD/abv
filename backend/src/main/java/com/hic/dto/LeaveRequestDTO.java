@@ -11,6 +11,10 @@ import java.time.LocalDateTime;
 public class LeaveRequestDTO {
 
     private Long id;
+    private String employeeCode;
+    private String employeeName;
+    private String finNumber;
+    private String leaveTypeName;
 
     @NotNull(message = "Employee ID is required")
     private Long employeeId;

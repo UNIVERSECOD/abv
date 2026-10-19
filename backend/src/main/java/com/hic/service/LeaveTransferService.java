@@ -1,0 +1,133 @@
+package com.hic.service;
+
+import com.hic.dto.*;
+import com.hic.exception.BadRequestException;
+import com.hic.model.Employee;
+import com.hic.model.LeaveRequest.LeaveStatus;
+import com.hic.model.LeaveType;
+import com.hic.repository.EmployeeRepository;
+import com.hic.repository.LeaveTypeRepository;
+import com.hic.util.TabularFileUtil;
+import com.hic.util.TenantContext;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
+import java.util.*;
+
+@Service
+@RequiredArgsConstructor
+public class LeaveTransferService {
+    static final List<String> HEADERS = List.of("Əməkdaş ID", "Əməkdaş", "FIN", "Məzuniyyət növü",
+            "Başlanğıc tarixi", "Bitmə tarixi", "Vəziyyət");
+    private final TabularFileUtil files;
+    private final LeaveService leaves;
+    private final EmployeeRepository employees;
+    private final LeaveTypeRepository types;
+
+    @Transactional(readOnly = true)
+    public byte[] export(boolean template) {
+        Long tenantId = tenant();
+        if (template) {
+            var staff = employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId);
+            Map<String, List<String>> choices = new LinkedHashMap<>();
+            choices.put("Əməkdaş ID", staff.stream().map(Employee::getEmployeeId).filter(Objects::nonNull).toList());
+            choices.put("Məzuniyyət növü", types.findByTenantId(tenantId).stream().map(LeaveType::getLeaveName).toList());
+            choices.put("Vəziyyət", List.of("Təsdiqlənib", "Gözləmədə", "Rədd edilib"));
+            List<List<String>> reference = new ArrayList<>();
+            reference.add(List.of("Əməkdaş ID", "Əməkdaş", "FIN"));
+            staff.forEach(e -> reference.add(List.of(text(e.getEmployeeId()), e.getLastName() + " " + e.getFirstName(), text(e.getFinNumber()))));
+            return files.writeExcelTemplate("Məzuniyyətlər", HEADERS,
+                    Set.of("Əməkdaş ID", "Məzuniyyət növü", "Başlanğıc tarixi", "Bitmə tarixi"),
+                    choices, reference, TabularFileUtil.LEAVE_TEMPLATE_NOTE);
+        }
+        return files.writeExcel("Məzuniyyətlər", HEADERS, leaves.getAll().stream()
+                .sorted(Comparator.comparing(LeaveRequestDTO::getStartDate).reversed())
+                .map(l -> List.of(text(l.getEmployeeCode()), text(l.getEmployeeName()), text(l.getFinNumber()),
+                        text(l.getLeaveTypeName()), l.getStartDate().toString(), l.getEndDate().toString(), statusLabel(l.getStatus())))
+                .toList());
+    }
+
+    @Transactional
+    public DataImportResultDTO importFile(MultipartFile file) {
+        Long tenantId = tenant();
+        String name = text(file == null ? null : file.getOriginalFilename()).toLowerCase(Locale.ROOT);
+        if (!name.endsWith(".xlsx") && !name.endsWith(".xls")) throw new BadRequestException("Excel faylı seçin (.xlsx və ya .xls)");
+        var table = files.read(file);
+        for (String header : List.of("Əməkdaş ID", "Məzuniyyət növü", "Başlanğıc tarixi", "Bitmə tarixi")) {
+            if (!table.hasHeader(header)) throw new BadRequestException("Başlıq yoxdur: " + header);
+        }
+        var staff = employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId);
+        var leaveTypes = types.findByTenantId(tenantId);
+        var requests = new ArrayList<LeaveRequestDTO>();
+        var errors = new ArrayList<DataImportErrorDTO>();
+        for (var row : table.rows()) {
+            try {
+                var matches = staff.stream().filter(e -> text(e.getEmployeeId()).equalsIgnoreCase(row.get("Əməkdaş ID"))).toList();
+                if (matches.size() != 1) throw new BadRequestException("Əməkdaş ID tapılmadı və ya unikal deyil");
+                Employee employee = matches.get(0);
+                if (!row.get("FIN").isBlank() && !row.get("FIN").equalsIgnoreCase(text(employee.getFinNumber()))) {
+                    throw new BadRequestException("FIN seçilmiş əməkdaşa uyğun deyil");
+                }
+                var matchingTypes = leaveTypes.stream().filter(t -> t.getLeaveName().equalsIgnoreCase(row.get("Məzuniyyət növü"))
+                        || t.getLeaveCode().equalsIgnoreCase(row.get("Məzuniyyət növü"))).toList();
+                if (matchingTypes.size() != 1) throw new BadRequestException("Məzuniyyət növü tapılmadı və ya unikal deyil");
+                var dto = new LeaveRequestDTO();
+                dto.setEmployeeId(employee.getId());
+                dto.setLeaveTypeId(matchingTypes.get(0).getId());
+                dto.setStartDate(date(row.get("Başlanğıc tarixi")));
+                dto.setEndDate(date(row.get("Bitmə tarixi")));
+                dto.setStatus(status(row.get("Vəziyyət")));
+                leaves.validate(dto, tenantId, null);
+                if (requests.stream().anyMatch(previous -> previous.getEmployeeId().equals(dto.getEmployeeId())
+                        && ((previous.getLeaveTypeId().equals(dto.getLeaveTypeId())
+                             && previous.getStartDate().equals(dto.getStartDate()) && previous.getEndDate().equals(dto.getEndDate()))
+                            || (dto.getStatus() != LeaveStatus.REJECTED && previous.getStatus() != LeaveStatus.REJECTED
+                                && !previous.getStartDate().isAfter(dto.getEndDate()) && !previous.getEndDate().isBefore(dto.getStartDate()))))) {
+                    throw new BadRequestException("Faylda eyni əməkdaşın məzuniyyət tarixləri üst-üstə düşür");
+                }
+                requests.add(dto);
+            } catch (BadRequestException ex) {
+                errors.add(new DataImportErrorDTO(row.rowNumber(), "Məzuniyyət", ex.getMessage()));
+            }
+        }
+        if (errors.isEmpty()) requests.forEach(leaves::create);
+        return DataImportResultDTO.builder().entity("leaves").totalRows(table.rows().size())
+                .importedRows(errors.isEmpty() ? requests.size() : 0)
+                .rejectedRows(errors.isEmpty() ? 0 : table.rows().size()).errors(errors).build();
+    }
+
+    private static LocalDate date(String value) {
+        for (String pattern : List.of("uuuu-MM-dd", "d.M.uuuu", "d/M/uuuu", "M/d/uuuu", "M/d/uu", "d-MMM-uuuu", "d-MMM-uu")) {
+            try { return LocalDate.parse(value, DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH).withResolverStyle(ResolverStyle.STRICT)); }
+            catch (DateTimeParseException ignored) { }
+        }
+        throw new BadRequestException("Tarix düzgün deyil: YYYY-MM-DD formatından istifadə edin");
+    }
+
+    private static LeaveStatus status(String value) {
+        return switch (value.trim().toUpperCase(Locale.ROOT).replace('İ', 'I')) {
+            case "", "APPROVED", "TƏSDIQLƏNIB" -> LeaveStatus.APPROVED;
+            case "PENDING", "GÖZLƏMƏDƏ" -> LeaveStatus.PENDING;
+            case "REJECTED", "RƏDD EDILIB" -> LeaveStatus.REJECTED;
+            default -> throw new BadRequestException("Vəziyyət düzgün deyil");
+        };
+    }
+
+    private static String statusLabel(LeaveStatus status) {
+        return switch (status) { case APPROVED -> "Təsdiqlənib"; case PENDING -> "Gözləmədə"; case REJECTED -> "Rədd edilib"; };
+    }
+
+    private static Long tenant() {
+        Long id = TenantContext.getTenantId();
+        if (id == null) throw new BadRequestException("Tenant context is required");
+        return id;
+    }
+
+    private static String text(String value) { return value == null ? "" : value; }
+}

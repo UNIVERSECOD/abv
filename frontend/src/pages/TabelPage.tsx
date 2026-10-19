@@ -282,7 +282,7 @@ export default function TabelPage() {
                       <td className="sticky left-[360px] z-20 bg-white px-3 py-2 min-w-[140px] max-w-[140px] truncate" title={row.position}>{row.position}</td>
                       {Array.from({ length: data.daysInMonth }, (_, day) => {
                         const value = row.daily[String(day + 1)]
-                        const isCode = value === 'Q/I' || value === 'Q/İ'
+                        const isCode = value === 'Q/I' || value === 'Q/İ' || value === 'M'
                         const isEmpty = value === null || value === undefined
                         const mcgDay = row.mcgDaily?.[String(day + 1)]
                         const unresolved = mcgDay?.status === 'OPEN_SESSION' || mcgDay?.status === 'MISSING_EXIT'

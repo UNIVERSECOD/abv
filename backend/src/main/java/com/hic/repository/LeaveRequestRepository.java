@@ -13,6 +13,8 @@ import java.util.List;
 @Repository
 public interface LeaveRequestRepository extends JpaRepository<LeaveRequest, Long> {
 
+    java.util.Optional<LeaveRequest> findByIdAndTenantId(Long id, Long tenantId);
+
     // Tenant-aware methods
     List<LeaveRequest> findByTenantId(Long tenantId);
     List<LeaveRequest> findByTenantIdAndEmployeeId(Long tenantId, Long employeeId);

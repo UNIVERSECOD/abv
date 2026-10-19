@@ -69,6 +69,34 @@ class TabelServiceTest {
     }
 
     @Test
+    void vacationOverridesRestDaysAcrossMonthBoundaryAndExportsMWithoutAddingWork() throws Exception {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        employee.setFirstName("Test"); employee.setLastName("Vacation");
+        var vacation = new LeaveRequest(); vacation.setEmployeeId(11L);
+        vacation.setStartDate(LocalDate.of(2026, 3, 30)); vacation.setEndDate(LocalDate.of(2026, 4, 2));
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
+                7L, List.of(11L), LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30))).thenReturn(List.of(vacation));
+        when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) ->
+                new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true));
+        var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
+        var row = data.getRows().get(0);
+        assertEquals("M", row.getDaily().get(1));
+        assertEquals("M", row.getDaily().get(2));
+        assertEquals("Q/İ", row.getDaily().get(3));
+        assertEquals(0, row.getWorkingDays());
+        assertEquals(0.0, row.getTotalHours());
+        assertEquals(0.0, row.getOvertimeHours());
+        try (var book = WorkbookFactory.create(new ByteArrayInputStream(tabelService.exportMonthlyTabel(
+                2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG)))) {
+            assertEquals("M", book.getSheetAt(0).getRow(2).getCell(4).getStringCellValue());
+            assertEquals("M", book.getSheetAt(0).getRow(2).getCell(5).getStringCellValue());
+            assertEquals("Q/İ", book.getSheetAt(0).getRow(2).getCell(6).getStringCellValue());
+        }
+    }
+
+    @Test
     void getMonthlyTabel_computesDailyValuesAndTotals() {
         TenantContext.setTenantId(7L);
 
@@ -160,7 +188,7 @@ class TabelServiceTest {
         assertEquals(0, row.getDaily().get(1));
         assertEquals(9.0, row.getDaily().get(3));
         assertEquals(8.5, row.getDaily().get(4));
-        assertEquals("Q/I", row.getDaily().get(5));
+        assertEquals("M", row.getDaily().get(5));
         assertEquals("Q/I", row.getDaily().get(6));
         assertEquals("Q/I", row.getDaily().get(7));
         assertNull(row.getDaily().get(11));

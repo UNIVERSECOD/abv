@@ -41,6 +41,7 @@ import java.util.Set;
 
 @Component
 public class TabularFileUtil {
+    public static final String LEAVE_TEMPLATE_NOTE = "Məzuniyyət importu: qırmızı başlıqlı sahələri doldurun. Əməkdaş ID və məzuniyyət növünü Siyahılar səhifəsindən seçin. Tarix: YYYY-MM-DD (məsələn, 2026-10-18). Başlanğıc və bitmə günləri daxildir. Boş vəziyyət Təsdiqlənib sayılır. Xəta varsa heç bir sətir yazılmır. Təkrar və üst-üstə düşən məzuniyyət qəbul edilmir.";
 
     public static final int MAX_ROWS = 5_000;
     public static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
@@ -77,6 +78,17 @@ public class TabularFileUtil {
     private byte[] writeExcel(String sheetName, List<String> headers, List<List<String>> rows,
                               Set<String> requiredHeaders, Map<String, List<String>> choices,
                               List<List<String>> references) {
+        return writeExcel(sheetName, headers, rows, requiredHeaders, choices, references, TEMPLATE_NOTE);
+    }
+
+    public byte[] writeExcelTemplate(String sheetName, List<String> headers, Set<String> requiredHeaders,
+                                    Map<String, List<String>> choices, List<List<String>> references, String note) {
+        return writeExcel(sheetName, headers, List.of(), requiredHeaders, choices, references, note);
+    }
+
+    private byte[] writeExcel(String sheetName, List<String> headers, List<List<String>> rows,
+                              Set<String> requiredHeaders, Map<String, List<String>> choices,
+                              List<List<String>> references, String templateNote) {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet(safeSheetName(sheetName));
             CellStyle headerStyle = createHeaderStyle(workbook);
@@ -93,7 +105,7 @@ public class TabularFileUtil {
                 CellStyle noteStyle = workbook.createCellStyle();
                 noteStyle.setFont(requiredFont);
                 noteStyle.setWrapText(true);
-                note.createCell(0).setCellValue(TEMPLATE_NOTE);
+                note.createCell(0).setCellValue(templateNote);
                 note.getCell(0).setCellStyle(noteStyle);
                 sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, headers.size() - 1));
             }
@@ -313,6 +325,7 @@ public class TabularFileUtil {
         for (int rowIndex = sheet.getFirstRowNum(); rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (row != null && !TEMPLATE_NOTE.equals(formatter.formatCellValue(row.getCell(0)))
+                    && !LEAVE_TEMPLATE_NOTE.equals(formatter.formatCellValue(row.getCell(0)))
                     && !isBlank(row, Math.max(row.getLastCellNum(), 0), formatter)) {
                 return row;
             }

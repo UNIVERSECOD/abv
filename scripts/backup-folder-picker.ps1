@@ -14,7 +14,9 @@ Add-Type -AssemblyName System.Drawing
 
 $allowedOrigins = @(
     'http://localhost:3000',
-    'http://127.0.0.1:3000'
+    'http://127.0.0.1:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3001'
 )
 $createdNew = $false
 $singleInstance = [Threading.Mutex]::new(

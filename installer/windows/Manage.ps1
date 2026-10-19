@@ -22,6 +22,9 @@ function Stop-Components([switch]$KeepDatabase) {
     }
 }
 try {
+    if ($Action -in @('Prepare', 'Uninstall') -and (Test-Path "$InstallRoot\scripts\install-backup-worker.ps1")) {
+        & "$InstallRoot\scripts\install-backup-worker.ps1" -ProjectRoot $DataRoot -Remove
+    }
     if ($Action -eq 'Prepare') {
         if (Test-Path "$DataRoot\native.json") {
             $config = Get-Content "$DataRoot\native.json" -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -110,6 +113,7 @@ try {
     Wait-Http "http://127.0.0.1:$($config.backendPort)/api/health"
     Start-Service AttendraWeb
     Wait-Http "http://127.0.0.1:$($config.webPort)/api/health"
+    & "$InstallRoot\scripts\install-backup-worker.ps1" -ProjectRoot $DataRoot -NativeInstallation
     $arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$InstallRoot\scripts\backup-attendra.ps1`" -ProjectRoot `"$DataRoot`""
     $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount

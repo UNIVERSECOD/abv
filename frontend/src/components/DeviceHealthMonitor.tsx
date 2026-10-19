@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { deviceApi } from '../api/deviceApi'
 import { branchApi } from '../api/branchApi'
 import { useAuthStore } from '../store/authStore'
@@ -6,9 +7,11 @@ import { toast } from '../store/toastStore'
 import { evaluateDeviceAlerts, type DeviceAlertState } from '../utils/deviceAlerts'
 
 export default function DeviceHealthMonitor() {
+  const { pathname } = useLocation()
+  const restoreProgress = pathname === '/backup-progress'
   const { user, isAuthenticated } = useAuthStore()
   useEffect(() => {
-    if (!isAuthenticated || !user || !['HEAD_OFFICE_HR', 'OFFICE_HR', 'DEPARTMENT_HR'].includes(user.userType)) return
+    if (restoreProgress || !isAuthenticated || !user || !['HEAD_OFFICE_HR', 'OFFICE_HR', 'DEPARTMENT_HR'].includes(user.userType)) return
     const key = `attendra-device-alerts:${user.id}:${user.username}`
     let cancelled = false, running = false
     let memory: DeviceAlertState = { offline: {} }
@@ -49,6 +52,6 @@ export default function DeviceHealthMonitor() {
     const onVisible = () => { void poll() }
     document.addEventListener('visibilitychange', onVisible)
     return () => { cancelled = true; window.clearInterval(timer); document.removeEventListener('visibilitychange', onVisible) }
-  }, [isAuthenticated, user])
+  }, [isAuthenticated, user, restoreProgress])
   return null
 }

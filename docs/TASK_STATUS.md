@@ -1,5 +1,18 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-19 — Full backup download and guarded restore
+
+- Added authenticated, single-installation/single-tenant CREATE/ZIP download and upload/inspect/confirmed RESTORE APIs plus Settings UI. A host worker performs the privileged work outside the backend, with bounded ZIP extraction, hashes, protected Windows ACLs, fixed operations and a shared lock with daily backups.
+- Restore first validates temporary PostgreSQL databases, then creates and persists a complete current database/photo/configuration backup. Existing DBs are renamed into retained rollback slots; configuration/photo/application health failures recover the original state. Journaled swaps support restart recovery. Host-specific paths/ports/connection credentials remain valid; archived application encryption/JWT/ISAPI keys restore with their data. Existing Docker image IDs are pinned during reconfiguration.
+- Restore progress uses an expiring status-only capability, avoiding logout during JWT changes. Physical device-removal jobs are paused after restore for explicit administrator review. No customer restore or terminal write was performed.
+- Verification: 531 backend tests; 11 frontend tests; lint/build; Docker builds/config/HTTP health; 33 assertions on both PowerShell 5.1 and 7; 70 legacy backup regressions per shell; 13 real disposable PostgreSQL restore/rollback checks. Synthetic UI states verified download/preview/confirmation/progress. Live CREATE-only worker and archive-file integrity passed; HR/login/schedule/device/leave aggregate counts, photos and configuration were preserved. Native SCM restore/reboot and a new installer EXE remain unverified; ISAPI source/suite unchanged. See `BACKUP_RESTORE.md`.
+
+## 2026-10-18 — Vacation management and MCG Tabel marker
+
+- Added İcazə / Məzuniyyət tabs, leave create/edit/cancel and Excel template/import/full export using existing leave tables. Approved inclusive vacation dates display M in Tabel/UI/Excel; existing work totals, permissions and MCG overtime rules remain unchanged.
+- Imports use HR employee codes, validate tenant/type/FIN/dates, reject duplicate/overlapping requests and write no rows if any row fails. Cancellation preserves history. No migration or physical-device operation.
+- Covered by the current full test suite and isolated API/browser checks; delivered in commit `3d1cdd2` on `codex/mcg`.
+
 ## 2026-10-13 — Daily-only badges, default daily view and yesterday shortcut
 
 - User restricted combined completed/missing-exit badges to DAILY. Removed the employee-attendance DTO/UI extension; the day-only projection stays in the overview, outside its early-return DETAILS path. Each detail visit retains its own entry, exit, worked minutes and one status, also in Excel. Monthly/yearly aggregation remains unchanged.

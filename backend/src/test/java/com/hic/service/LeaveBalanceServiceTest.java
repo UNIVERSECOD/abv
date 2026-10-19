@@ -38,26 +38,22 @@ class LeaveBalanceServiceTest {
 
     @Test void openingBalanceIsPreservedAndEarlierDaysAreNotDeducted() {
         var result = LeaveBalanceService.calculate(employee(), List.of(
-                leave("2026-10-01", "2026-10-18"), leave("2026-10-18", "2026-10-21")), today);
-        assertEquals(1, result.usedDays());
-        assertEquals(2, result.plannedDays());
-        assertEquals(19, result.remainingDays());
-        assertEquals(17, result.availableDays());
+                leave("2026-10-01", "2026-10-18"), leave("2026-10-18", "2026-10-21")));
+        assertEquals(3, result.usedDays());
+        assertEquals(17, result.remainingDays());
     }
 
-    @Test void futureDaysAcrossYearBoundaryRemainReservedWithoutInventingAnnualCredit() {
-        var result = LeaveBalanceService.calculate(employee(), List.of(leave("2026-12-30", "2027-01-02")), today);
-        assertEquals(0, result.usedDays());
-        assertEquals(4, result.plannedDays());
-        assertEquals(16, result.availableDays());
+    @Test void futureDaysAcrossYearBoundaryAreImmediatelyDebitedWithoutInventingAnnualCredit() {
+        var result = LeaveBalanceService.calculate(employee(), List.of(leave("2026-12-30", "2027-01-02")));
+        assertEquals(4, result.usedDays());
+        assertEquals(16, result.remainingDays());
     }
 
     @Test void legacyOverlapsAndDuplicatesAreCountedOnce() {
         var result = LeaveBalanceService.calculate(employee(), List.of(
                 leave("2026-10-19", "2026-10-22"), leave("2026-10-20", "2026-10-21"),
-                leave("2026-10-21", "2026-10-24")), today);
-        assertEquals(1, result.usedDays());
-        assertEquals(5, result.plannedDays());
+                leave("2026-10-21", "2026-10-24")));
+        assertEquals(6, result.usedDays());
     }
 
     @Test void cancellationRestoresBalanceAndPendingDoesNotDebit() {
@@ -65,17 +61,28 @@ class LeaveBalanceServiceTest {
         rejected.setStatus(LeaveRequest.LeaveStatus.REJECTED);
         var pending = leave("2026-10-23", "2026-10-25");
         pending.setStatus(LeaveRequest.LeaveStatus.PENDING);
-        var result = LeaveBalanceService.calculate(employee(), List.of(rejected, pending), today);
-        assertEquals(20, result.availableDays());
+        var result = LeaveBalanceService.calculate(employee(), List.of(rejected, pending));
+        assertEquals(20, result.remainingDays());
+    }
+
+    @Test void futureApprovalAndCancellationImmediatelyChangeUsedAndRemaining() {
+        var request = leave("2026-11-01", "2026-11-05");
+        var approved = LeaveBalanceService.calculate(employee(), List.of(request));
+        assertEquals(5, approved.usedDays());
+        assertEquals(15, approved.remainingDays());
+        request.setStatus(LeaveRequest.LeaveStatus.REJECTED);
+        var cancelled = LeaveBalanceService.calculate(employee(), List.of(request));
+        assertEquals(0, cancelled.usedDays());
+        assertEquals(20, cancelled.remainingDays());
     }
 
     @Test void missingOpeningBalanceIsNotSilentlyAssumedAndOverdraftIsVisible() {
         Employee employee = employee();
         employee.setAnnualLeaveBalance(null);
-        assertNull(LeaveBalanceService.calculate(employee, List.of(), today).remainingDays());
+        assertNull(LeaveBalanceService.calculate(employee, List.of()).remainingDays());
         employee.setAnnualLeaveBalance(0);
         assertEquals(-1, LeaveBalanceService.calculate(employee,
-                List.of(leave("2026-10-19", "2026-10-19")), today).remainingDays());
+                List.of(leave("2026-10-19", "2026-10-19"))).remainingDays());
     }
 
     @Test void readsAreTenantScopedAndOnlyAnnualLeaveIsDebited() {
@@ -90,7 +97,7 @@ class LeaveBalanceServiceTest {
         when(requests.findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED)).thenReturn(List.of(sickLeave));
         try {
             TenantContext.setTenantId(3L);
-            assertEquals(20, new LeaveBalanceService(employees, requests, types).getAll().get(0).availableDays());
+            assertEquals(20, new LeaveBalanceService(employees, requests, types).getAll().get(0).remainingDays());
         } finally { TenantContext.clear(); }
         verify(requests).findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED);
     }

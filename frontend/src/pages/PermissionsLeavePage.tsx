@@ -347,20 +347,20 @@ function LeavesPanel() {
           <h3 className="font-semibold">Məzuniyyət balansı</h3>
           <p className="my-2 text-sm text-slate-500">
             Başlanğıc qalığından yalnız təsdiqlənmiş illik məzuniyyət çıxılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
-            Bu gün istifadə olunana daxildir; gələcək günlər planlaşdırılandır. Günlər təqvimlə sayılır, bayramlar çıxılmır.
+            Gələcək tarixlər daxil olmaqla təsdiqlənmiş günlər dərhal balansdan çıxılır; ləğv edildikdə geri qayıdır. Günlər təqvimlə sayılır, bayramlar çıxılmır.
             İllik günlər avtomatik əlavə edilmir. Başlanğıc qalığı işçi kartında düzəldilə bilər.
           </p>
           <div className="max-h-80 overflow-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50"><tr>
-                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'İstifadə olunan', 'Planlaşdırılan', 'Qalan', 'Plan çıxıldıqdan sonra'].map(h =>
+                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'İstifadə olunan', 'Qalan'].map(h =>
                   <th className="whitespace-nowrap p-3" key={h}>{h}</th>)}
               </tr></thead>
               <tbody>{balances.filter(b => `${b.employeeName} ${b.employeeCode}`.toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))).map(b => (
                 <tr className="border-t border-slate-100" key={b.employeeId}>
                   <td className="p-3">{b.employeeName}<div className="text-xs text-slate-500">{b.employeeCode}</div></td>
                   <td className="whitespace-nowrap p-3">{b.startDate}</td>
-                  {[b.openingDays, b.usedDays, b.plannedDays, b.remainingDays, b.availableDays].map((value, index) => (
+                  {[b.openingDays, b.usedDays, b.remainingDays].map((value, index) => (
                     <td className={`p-3 ${value !== null && value < 0 ? 'font-semibold text-red-600' : ''}`} key={index}>
                       {value === null ? 'Qalıq daxil edilməyib' : `${value} gün`}
                     </td>

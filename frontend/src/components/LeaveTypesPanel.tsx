@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { leaveApi, LeaveType, LeaveTypePayload } from '../api/leaveApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { toast } from '../store/toastStore.ts'
@@ -12,6 +12,10 @@ export default function LeaveTypesPanel() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const dialog = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    if (editing !== undefined) dialog.current?.showModal()
+  }, [editing])
   const load = async () => {
     try { setTypes((await leaveApi.getTypes()).data.data.filter(t => !t.archived)); setError('') }
     catch (e) { setError(getApiErrorMessage(e, 'Məzuniyyət növləri yüklənmədi')) }
@@ -42,7 +46,11 @@ export default function LeaveTypesPanel() {
     <div className="flex items-center justify-between"><h2 className="text-xl font-semibold">Məzuniyyət növləri</h2>
       <button className="rounded-md bg-purple-600 px-4 py-2 text-sm text-white" onClick={() => { setEditing(null); setForm(empty); setErrors({}) }}>+ Yeni növ</button></div>
     {error && <p role="alert" className="text-red-600">{error}</p>}
-    {editing !== undefined && <div role="region" aria-label="Məzuniyyət növü forması" className="max-w-xl space-y-4 rounded-lg border bg-white p-5">
+    {editing !== undefined && <dialog ref={dialog} aria-labelledby="leave-type-title"
+      onCancel={event => { event.preventDefault(); if (!busy) setEditing(undefined) }}
+      className="max-h-[90vh] w-[calc(100%-2rem)] max-w-xl space-y-4 overflow-y-auto rounded-xl border-0 bg-white p-6 shadow-xl backdrop:bg-black/40">
+      <div className="flex items-center justify-between"><h3 id="leave-type-title" className="text-lg font-semibold">{editing == null ? 'Yeni məzuniyyət növü' : 'Məzuniyyət növünü redaktə et'}</h3>
+        <button disabled={busy} onClick={() => setEditing(undefined)} aria-label="Bağla">×</button></div>
       <label className="block text-sm">Məzuniyyətin adı<input className={input} maxLength={200} value={form.leaveName} onChange={e => setForm({ ...form, leaveName: e.target.value })} />
         {errors.name && <span role="alert" className="text-red-600">{errors.name}</span>}</label>
       <label className="block text-sm">Tabeldə qısaldılmış adı (ən çox 3 hərf)<input className={input} maxLength={3} value={form.shortName} onChange={e => setForm({ ...form, shortName: e.target.value.toLocaleUpperCase('az') })} />
@@ -51,7 +59,7 @@ export default function LeaveTypesPanel() {
       {errors.save && <p role="alert" className="text-sm text-red-600">{errors.save}</p>}
       <div className="flex gap-3"><button disabled={busy} className="rounded-md bg-purple-600 px-4 py-2 text-sm text-white" onClick={() => void save()}>Yadda saxla</button>
         <button disabled={busy} onClick={() => setEditing(undefined)}>Bağla</button></div>
-    </div>}
+    </dialog>}
     <div className="overflow-x-auto rounded-lg border bg-white"><table className="w-full text-left text-sm">
       <thead className="bg-slate-50"><tr>{['Məzuniyyətin adı', 'Qısaltma', 'Balansdan çıxılır', 'Əməliyyat'].map(h => <th className="p-3" key={h}>{h}</th>)}</tr></thead>
       <tbody>{types.map(type => <tr className="border-t" key={type.id}>

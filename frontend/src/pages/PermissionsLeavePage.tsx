@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import LeaveTypesPanel from '../components/LeaveTypesPanel.tsx'
-import LeaveUsageTable from '../components/LeaveUsageTable.tsx'
 import PermissionAssignmentPage from './PermissionAssignmentPage.tsx'
-import { leaveApi, LeaveBalance, LeavePayload, LeaveRequest, LeaveStatus, LeaveType } from '../api/leaveApi.ts'
+import { leaveApi, LeaveBalance, LeavePayload, LeaveRequest, LeaveStatus, LeaveType, LeaveTypeUsage } from '../api/leaveApi.ts'
 import { employeeApi } from '../api/employeeApi.ts'
 import { Employee } from '../types'
 import { getApiErrorMessage } from '../utils/apiError.ts'
@@ -202,7 +201,7 @@ function LeaveModal({
 }
 
 function LeavesPanel() {
-  const [usageRefresh, setUsageRefresh] = useState(0)
+  const [usage, setUsage] = useState<LeaveTypeUsage[]>([])
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -221,11 +220,12 @@ function LeavesPanel() {
     setLoading(true)
     setError('')
     try {
-      const [leaveRes, typeRes, employeeRes, balanceRes] = await Promise.all([
+      const [leaveRes, typeRes, employeeRes, balanceRes, usageRes] = await Promise.all([
         leaveApi.getAll(),
         leaveApi.getTypes(),
         employeeApi.getAll(0, 500),
         leaveApi.getBalances(),
+        leaveApi.getUsage(),
       ])
       const staff = [...employeeRes.data.content]
       for (let page = 1; page < employeeRes.data.totalPages; page++) {
@@ -236,7 +236,7 @@ function LeavesPanel() {
       setTypes(typeRes.data.data)
       setEmployees(staff)
       setBalances(balanceRes.data.data)
-      setUsageRefresh(value => value + 1)
+      setUsage(usageRes.data.data)
     } catch (e) {
       setError(getApiErrorMessage(e, 'Məzuniyyətləri yükləmək mümkün olmadı'))
     } finally {
@@ -260,6 +260,25 @@ function LeavesPanel() {
         .sort((a, b) => b.startDate.localeCompare(a.startDate) || b.id - a.id),
     [leaves, status, date, search],
   )
+
+  const employeeById = useMemo(() => new Map(employees.map(employee => [employee.id, employee])), [employees])
+  const usageByEmployeeType = useMemo(() => new Map(usage.map(row => [row.employeeId + ':' + row.leaveTypeId, row.usedDays])), [usage])
+  const recordsByEmployee = useMemo(() => {
+    const grouped = new Map<number, LeaveRequest[]>()
+    filtered.forEach(leave => {
+      const records = grouped.get(leave.employeeId) ?? []
+      records.push(leave)
+      grouped.set(leave.employeeId, records)
+    })
+    return grouped
+  }, [filtered])
+  const visibleTypes = types.filter(type => !type.archived || leaves.some(leave => leave.leaveTypeId === type.id))
+  const visibleBalances = balances.filter(balance => {
+    const records = recordsByEmployee.get(balance.employeeId) ?? []
+    const employee = employeeById.get(balance.employeeId)
+    const matchesSearch = [balance.employeeName, balance.employeeCode, employee?.finNumber ?? ''].join(' ').toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))
+    return (matchesSearch || records.length > 0) && ((!date && status === 'ALL') || records.length > 0)
+  })
 
   const download = async (template: boolean) => {
     setBusy(true)
@@ -352,36 +371,6 @@ function LeavesPanel() {
         </p>
       )}
       {!loading && !types.some(t => !t.archived) && <p className="text-sm text-amber-700">Əvvəl “Məzuniyyət növləri” bölməsində növ yaradın, sonra əməkdaşa məzuniyyət təyin edin.</p>}
-      <LeaveUsageTable refresh={usageRefresh} />
-      {!loading && !error && (
-        <section className="rounded-md border border-slate-200 bg-white p-4">
-          <h3 className="font-semibold">Məzuniyyət balansı</h3>
-          <p className="my-2 text-sm text-slate-500">
-            Başlanğıc qalığından “Balansdan çıxılsın” seçilmiş növlərin təsdiqlənmiş günləri çıxılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
-            Gələcək tarixlər daxil olmaqla təsdiqlənmiş günlər dərhal balansdan çıxılır; ləğv edildikdə geri qayıdır. Günlər təqvimlə sayılır, bayramlar çıxılmır.
-            İllik günlər avtomatik əlavə edilmir. Başlanğıc qalığı işçi kartında düzəldilə bilər.
-          </p>
-          <div className="max-h-80 overflow-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-slate-50"><tr>
-                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'Balansdan çıxılan günlər', 'Qalan', 'Ödənişsiz günlər'].map(h =>
-                  <th className="whitespace-nowrap p-3" key={h}>{h}</th>)}
-              </tr></thead>
-              <tbody>{balances.filter(b => `${b.employeeName} ${b.employeeCode}`.toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))).map(b => (
-                <tr className="border-t border-slate-100" key={b.employeeId}>
-                  <td className="p-3">{b.employeeName}<div className="text-xs text-slate-500">{b.employeeCode}</div></td>
-                  <td className="whitespace-nowrap p-3">{b.startDate}</td>
-                  {[b.openingDays, b.usedDays, b.remainingDays, b.unpaidDays].map((value, index) => (
-                    <td className={`p-3 ${value !== null && value < 0 ? 'font-semibold text-red-600' : ''}`} key={index}>
-                      {value === null ? 'Qalıq daxil edilməyib' : `${value} gün`}
-                    </td>
-                  ))}
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
-        </section>
-      )}
       {importErrors.length > 0 && (
         <div role="alert" className="max-h-64 overflow-auto rounded-md bg-red-50 p-4 text-sm text-red-700">
           <p className="mb-2 font-semibold">Heç bir məlumat yazılmadı. Faylı düzəldib yenidən import edin.</p>
@@ -421,62 +410,36 @@ function LeavesPanel() {
           onChange={(e) => setDate(e.target.value)}
         />
       </div>
-      <p className="text-sm text-slate-500">{filtered.length} qeyd · Excel ixracına bütün məzuniyyətlər daxildir.</p>
+
+      <p className="text-sm text-slate-500">Hər əməkdaş bir sətirdə göstərilir. Növ sütunlarında başlanğıc balans tarixindən sonrakı təsdiqlənmiş günlər sayılır. Qalıq ümumi məzuniyyət balansıdır; tarix və vəziyyət filtrləri məzuniyyət qeydlərinə aiddir.</p>
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
         <table className="min-w-full text-left text-sm">
-          <thead className="bg-slate-50 text-slate-500">
-            <tr>
-              {['Əməkdaş', 'FIN', 'Məzuniyyət növü', 'Başlanğıc', 'Bitmə', 'Vəziyyət', 'Əməliyyat'].map((h) => (
-                <th key={h} className="whitespace-nowrap px-4 py-3">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
+          <thead className="bg-slate-50 text-slate-500"><tr>
+            {['Əməkdaş', 'FIN', 'Balansın başlanğıcı', 'Başlanğıc qalığı', ...visibleTypes.map(t => t.leaveName), 'Balansdan çıxılan', 'Qalan', 'Məzuniyyət qeydləri'].map((h, i) =>
+              <th key={i} className="whitespace-nowrap px-4 py-3">{h}</th>)}
+          </tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr>
-                <td colSpan={7} className="p-8 text-center">
-                  Yüklənir...
-                </td>
-              </tr>
-            ) : !filtered.length ? (
-              <tr>
-                <td colSpan={7} className="p-8 text-center text-slate-500">
-                  Məzuniyyət tapılmadı
-                </td>
-              </tr>
-            ) : (
-              filtered.map((l) => (
-                <tr key={l.id}>
-                  <td className="px-4 py-3">
-                    <div className="font-medium">{l.employeeName}</div>
-                    <div className="text-xs text-slate-500">{l.employeeCode}</div>
-                  </td>
-                  <td className="px-4 py-3">{l.finNumber || '—'}</td>
-                  <td className="px-4 py-3">{l.leaveTypeName}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{l.startDate}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{l.endDate}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`whitespace-nowrap rounded-full px-2 py-1 text-xs ${l.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' : l.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-500'}`}
-                    >
-                      {statusLabels[l.status]}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3">
-                    <button disabled={busy} className="mr-3 text-purple-700" onClick={() => setModal({ initial: l })}>
-                      Redaktə et
-                    </button>
-                    {l.status !== 'REJECTED' && (
-                      <button disabled={busy} className="text-red-600" onClick={() => void reject(l)}>
-                        Ləğv et
-                      </button>
-                    )}
-                  </td>
+            {loading ? <tr><td colSpan={visibleTypes.length + 7} className="p-8 text-center">Yüklənir...</td></tr>
+              : !visibleBalances.length ? <tr><td colSpan={visibleTypes.length + 7} className="p-8 text-center text-slate-500">Məlumat tapılmadı</td></tr>
+              : visibleBalances.map(balance => {
+                const employee = employeeById.get(balance.employeeId)
+                const records = recordsByEmployee.get(balance.employeeId) ?? []
+                return <tr key={balance.employeeId} className="align-top">
+                  <td className="whitespace-nowrap px-4 py-3"><div className="font-medium">{balance.employeeName}</div><div className="text-xs text-slate-500">{balance.employeeCode}</div></td>
+                  <td className="px-4 py-3">{employee?.finNumber || '—'}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{balance.startDate}</td>
+                  <td className="px-4 py-3">{balance.openingDays == null ? 'Daxil edilməyib' : balance.openingDays + ' gün'}</td>
+                  {visibleTypes.map(type => <td key={type.id} className="px-4 py-3">{usageByEmployeeType.get(balance.employeeId + ':' + type.id) ?? 0} gün</td>)}
+                  <td className="px-4 py-3">{balance.usedDays} gün</td>
+                  <td className={'whitespace-nowrap px-4 py-3 ' + ((balance.remainingDays ?? 0) < 0 ? 'font-semibold text-red-600' : '')}>{balance.remainingDays == null ? 'Daxil edilməyib' : balance.remainingDays + ' gün'}</td>
+                  <td className="min-w-[320px] px-4 py-3"><ul className="space-y-3">{records.map(leave => <li key={leave.id} className="rounded-md bg-slate-50 p-2">
+                    <div className="font-medium">{leave.leaveTypeName}</div>
+                    <div className="text-xs text-slate-600">{leave.startDate} – {leave.endDate} · {statusLabels[leave.status]}</div>
+                    <div className="mt-1 flex gap-3"><button disabled={busy} className="text-purple-700" onClick={() => setModal({ initial: leave })}>Redaktə et</button>
+                      {leave.status !== 'REJECTED' && <button disabled={busy} className="text-red-600" onClick={() => void reject(leave)}>Ləğv et</button>}</div>
+                  </li>)}</ul>{!records.length && <span className="text-slate-400">Məzuniyyət qeydi yoxdur</span>}</td>
                 </tr>
-              ))
-            )}
+              })}
           </tbody>
         </table>
       </div>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import LeaveEmployeeSelect from '../components/LeaveEmployeeSelect.tsx'
+import { leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes } from '../utils/leaveFilters.ts'
 import LeaveTypesPanel from '../components/LeaveTypesPanel.tsx'
 import PermissionAssignmentPage from './PermissionAssignmentPage.tsx'
 import { leaveApi, LeaveBalance, LeavePayload, LeaveRequest, LeaveStatus, LeaveType, LeaveTypeUsage } from '../api/leaveApi.ts'
@@ -39,17 +41,10 @@ function LeaveModal({
   const [startDate, setStartDate] = useState(initial?.startDate ?? '')
   const [endDate, setEndDate] = useState(initial?.endDate ?? '')
   const [status, setStatus] = useState<LeaveStatus>(initial?.status ?? 'APPROVED')
-  const [search, setSearch] = useState('')
+
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
-  const selectable = employees.filter(
-    (e) =>
-      (e.employmentStatus === 'ACTIVE' || e.id === initial?.employeeId) &&
-      (`${e.employeeId} ${e.lastName} ${e.firstName} ${e.finNumber}`
-        .toLocaleLowerCase('az')
-        .includes(search.toLocaleLowerCase('az')) ||
-        e.id === employeeId),
-  )
+  const selectable = employees.filter(employee => employee.employmentStatus === 'ACTIVE' || employee.id === initial?.employeeId)
 
   const submit = async () => {
     const next: Record<string, string> = {}
@@ -91,26 +86,7 @@ function LeaveModal({
         </p>
         <div className="mt-4 space-y-4">
           <div>
-            <label className="text-sm">
-              Əməkdaş axtar
-              <input
-                className={inputClass}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Ad, soyad, ID və ya FIN"
-              />
-            </label>
-            <label className="mt-2 block text-sm">
-              Əməkdaş
-              <select className={inputClass} value={employeeId} onChange={(e) => setEmployeeId(Number(e.target.value))}>
-                <option value={0}>Seçin</option>
-                {selectable.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.lastName} {e.firstName} · {e.employeeId}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <LeaveEmployeeSelect employees={selectable} value={employeeId} onChange={setEmployeeId} disabled={saving} />
             {errors.employee && (
               <p role="alert" className="text-sm text-red-600">
                 {errors.employee}
@@ -210,7 +186,9 @@ function LeavesPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
-  const [date, setDate] = useState('')
+  const [month, setMonth] = useState('')
+  const [from, setFrom] = useState('')
+  const [through, setThrough] = useState('')
   const [status, setStatus] = useState('ALL')
   const [modal, setModal] = useState<{ initial?: LeaveRequest } | null>(null)
   const [importErrors, setImportErrors] = useState<DataImportError[]>([])
@@ -252,13 +230,13 @@ function LeavesPanel() {
         .filter(
           (l) =>
             (status === 'ALL' || l.status === status) &&
-            (!date || (l.startDate <= date && l.endDate >= date)) &&
+            leaveOverlapsPeriod(l.startDate, l.endDate, from, through) &&
             `${l.employeeName} ${l.employeeCode} ${l.finNumber} ${l.leaveTypeName}`
               .toLocaleLowerCase('az')
               .includes(search.toLocaleLowerCase('az')),
         )
         .sort((a, b) => b.startDate.localeCompare(a.startDate) || b.id - a.id),
-    [leaves, status, date, search],
+    [leaves, status, from, through, search],
   )
 
   const employeeById = useMemo(() => new Map(employees.map(employee => [employee.id, employee])), [employees])
@@ -272,13 +250,9 @@ function LeavesPanel() {
     })
     return grouped
   }, [filtered])
-  const visibleTypes = types.filter(type => !type.archived || leaves.some(leave => leave.leaveTypeId === type.id))
-  const visibleBalances = balances.filter(balance => {
-    const records = recordsByEmployee.get(balance.employeeId) ?? []
-    const employee = employeeById.get(balance.employeeId)
-    const matchesSearch = [balance.employeeName, balance.employeeCode, employee?.finNumber ?? ''].join(' ').toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))
-    return (matchesSearch || records.length > 0) && ((!date && status === 'ALL') || records.length > 0)
-  })
+  const visibleTypes = visibleLeaveTypes(types, leaves)
+  const visibleBalances = balances.filter(balance => recordsByEmployee.has(balance.employeeId))
+  const periodError = from && through && from > through ? 'Bitmə tarixi başlanğıcdan əvvəl ola bilməz' : ''
 
   const download = async (template: boolean) => {
     setBusy(true)
@@ -402,13 +376,21 @@ function LeavesPanel() {
             </option>
           ))}
         </select>
-        <input
-          aria-label="Məzuniyyət günü"
-          className={inputClass}
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
+        <label className="text-sm">Ay
+          <input aria-label="Məzuniyyət ayı" className={inputClass} type="month" value={month} onChange={event => {
+            setMonth(event.target.value)
+            const range = leaveMonthRange(event.target.value)
+            setFrom(range.from); setThrough(range.through)
+          }} />
+        </label>
+        <label className="text-sm">Başlanğıc tarixi
+          <input aria-label="Filtrin başlanğıc tarixi" className={inputClass} type="date" value={from} onChange={event => { setMonth(''); setFrom(event.target.value) }} />
+        </label>
+        <label className="text-sm">Bitmə tarixi
+          <input aria-label="Filtrin bitmə tarixi" className={inputClass} type="date" value={through} onChange={event => { setMonth(''); setThrough(event.target.value) }} />
+          {periodError && <span role="alert" className="text-sm text-red-600">{periodError}</span>}
+        </label>
+        <button className={buttonClass + ' self-end'} onClick={() => { setMonth(''); setFrom(''); setThrough(''); setStatus('ALL'); setSearch('') }}>Filtrləri təmizlə</button>
       </div>
 
       <p className="text-sm text-slate-500">Hər əməkdaş bir sətirdə göstərilir. Növ sütunlarında başlanğıc balans tarixindən sonrakı təsdiqlənmiş günlər sayılır. Qalıq ümumi məzuniyyət balansıdır; tarix və vəziyyət filtrləri məzuniyyət qeydlərinə aiddir.</p>

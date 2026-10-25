@@ -8,7 +8,92 @@ const exportsObject = {}
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/utils/leaveFilters.ts'), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText, { exports: exportsObject })
-const { leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes, leaveCalendarDays } = exportsObject
+const { allocateLeaveDebitDays, leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes, leaveCalendarDays } = exportsObject
+
+const debitRequest = (id, startDate, endDate, overrides = {}) => ({
+  id, employeeId: 1, leaveTypeId: 1, status: 'APPROVED', startDate, endDate, ...overrides,
+})
+const openingDates = new Map([[1, '2026-10-20'], [2, '2026-10-20']])
+
+test('overlapping legacy rows allocate only unique debit days in stable id order', () => {
+  const rows = [debitRequest(2, '2026-10-22', '2026-10-26'), debitRequest(1, '2026-10-20', '2026-10-24')]
+  const snapshot = JSON.stringify(rows)
+  const result = allocateLeaveDebitDays(rows, new Set([1]), openingDates)
+  assert.equal(result.get(1), 5)
+  assert.equal(result.get(2), 2)
+  assert.equal([...result.values()].reduce((sum, days) => sum + days, 0), 7)
+  assert.equal(JSON.stringify(rows), snapshot)
+})
+
+test('nested and duplicate requests do not debit again while later extensions add only new days', () => {
+  const rows = [debitRequest(1, '2026-10-20', '2026-10-30'), debitRequest(2, '2026-10-22', '2026-10-24'),
+    debitRequest(3, '2026-10-20', '2026-10-30'), debitRequest(4, '2026-10-29', '2026-11-02')]
+  const result = allocateLeaveDebitDays(rows, new Set([1]), openingDates)
+  assert.equal(result.get(1), 11)
+  assert.equal(result.get(2), 0)
+  assert.equal(result.get(3), 0)
+  assert.equal(result.get(4), 3)
+})
+
+test('different debit types share the same union but employees keep independent allocations', () => {
+  const result = allocateLeaveDebitDays([
+    debitRequest(1, '2026-10-20', '2026-10-24'),
+    debitRequest(2, '2026-10-22', '2026-10-26', { leaveTypeId: 2 }),
+    debitRequest(3, '2026-10-22', '2026-10-26', { employeeId: 2, leaveTypeId: 2 }),
+  ], new Set([1, 2]), openingDates)
+  assert.equal(result.get(1), 5)
+  assert.equal(result.get(2), 2)
+  assert.equal(result.get(3), 5)
+})
+
+test('opening dates clip historical portions before overlaps are allocated', () => {
+  const result = allocateLeaveDebitDays([
+    debitRequest(1, '2026-10-18', '2026-10-22'), debitRequest(2, '2026-10-21', '2026-10-25'),
+    debitRequest(3, '2026-10-01', '2026-10-19'),
+  ], new Set([1]), openingDates)
+  assert.equal(result.get(1), 3)
+  assert.equal(result.get(2), 3)
+  assert.equal(result.get(3), 0)
+})
+
+test('pending, rejected and non-debit requests neither charge nor consume another row allocation', () => {
+  const result = allocateLeaveDebitDays([
+    debitRequest(1, '2026-10-20', '2026-10-24', { status: 'PENDING' }),
+    debitRequest(2, '2026-10-20', '2026-10-24', { status: 'REJECTED' }),
+    debitRequest(3, '2026-10-20', '2026-10-24', { leaveTypeId: 9 }),
+    debitRequest(4, '2026-10-20', '2026-10-24'),
+  ], new Set([1]), openingDates)
+  assert.equal(result.get(1), 0)
+  assert.equal(result.get(2), 0)
+  assert.equal(result.get(3), 0)
+  assert.equal(result.get(4), 5)
+})
+
+test('cancellation and employee or type reassignment recalculate row contributions', () => {
+  const first = debitRequest(1, '2026-10-20', '2026-10-24')
+  const second = debitRequest(2, '2026-10-22', '2026-10-26')
+  assert.equal(allocateLeaveDebitDays([first, second], new Set([1]), openingDates).get(2), 2)
+  for (const change of [{ status: 'REJECTED' }, { employeeId: 2 }, { leaveTypeId: 9 }]) {
+    const result = allocateLeaveDebitDays([{ ...first, ...change }, second], new Set([1]), openingDates)
+    assert.equal(result.get(2), 5)
+    assert.equal(result.get(1), change.employeeId ? 5 : 0)
+  }
+})
+
+test('display filtering and sorting reuse allocations from the full request set', () => {
+  const rows = [debitRequest(1, '2026-10-20', '2026-10-24'), debitRequest(2, '2026-10-22', '2026-10-26')]
+  const result = allocateLeaveDebitDays(rows, new Set([1]), openingDates)
+  const displayed = rows.filter(row => row.id === 2)
+  assert.equal(displayed.reduce((sum, row) => sum + result.get(row.id), 0), 2)
+  assert.equal(allocateLeaveDebitDays([...rows].reverse(), new Set([1]), openingDates).get(2), 2)
+})
+
+test('long ranges are represented as intervals instead of individual calendar days', () => {
+  const rows = [debitRequest(1, '1000-01-01', '9000-12-31'), debitRequest(2, '2000-01-01', '8000-12-31')]
+  const result = allocateLeaveDebitDays(rows, new Set([1]), new Map([[1, '1000-01-01']]))
+  assert.equal(result.get(1), leaveCalendarDays('1000-01-01', '9000-12-31'))
+  assert.equal(result.get(2), 0)
+})
 
 test('each leave row counts its own inclusive calendar days across month boundaries', () => {
   assert.equal(leaveCalendarDays('2026-10-25', '2026-10-28'), 4)

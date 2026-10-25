@@ -68,7 +68,7 @@ public class LeaveTransferService {
         leaves.lockEmployees(tenantId, staff.stream()
                 .filter(e -> requestedCodes.contains(text(e.getEmployeeId()).toLowerCase(Locale.ROOT)))
                 .map(Employee::getId).toList());
-        var leaveTypes = types.findByTenantId(tenantId);
+        var leaveTypes = types.findByTenantId(tenantId).stream().filter(type -> !type.isArchived()).toList();
         var requests = new ArrayList<LeaveRequestDTO>();
         var requestRows = new ArrayList<Integer>();
         var errors = new ArrayList<DataImportErrorDTO>();
@@ -80,9 +80,7 @@ public class LeaveTransferService {
                 if (!row.get("FIN").isBlank() && !row.get("FIN").equalsIgnoreCase(text(employee.getFinNumber()))) {
                     throw new BadRequestException("FIN seçilmiş əməkdaşa uyğun deyil");
                 }
-                var matchingTypes = leaveTypes.stream().filter(t -> t.getLeaveName().equalsIgnoreCase(row.get("Məzuniyyət növü"))
-                        || t.getLeaveCode().equalsIgnoreCase(row.get("Məzuniyyət növü"))
-                        || t.displayName().equalsIgnoreCase(row.get("Məzuniyyət növü"))).toList();
+                var matchingTypes = matchingTypes(leaveTypes, row.get("Məzuniyyət növü"));
                 if (matchingTypes.size() != 1) throw new BadRequestException("Məzuniyyət növü tapılmadı və ya unikal deyil");
                 var dto = new LeaveRequestDTO();
                 dto.setEmployeeId(employee.getId());
@@ -105,6 +103,8 @@ public class LeaveTransferService {
             }
         }
         if (errors.isEmpty()) {
+            // Different bulk files can touch the same types in different row orders.
+            leaves.lockTypes(tenantId, requests.stream().map(LeaveRequestDTO::getLeaveTypeId).toList());
             for (int i = 0; i < requests.size(); i++) {
                 try {
                     leaves.create(requests.get(i));
@@ -118,6 +118,17 @@ public class LeaveTransferService {
         return DataImportResultDTO.builder().entity("leaves").totalRows(table.rows().size())
                 .importedRows(errors.isEmpty() ? requests.size() : 0)
                 .rejectedRows(errors.isEmpty() ? 0 : table.rows().size()).errors(errors).build();
+    }
+
+    private static List<LeaveType> matchingTypes(List<LeaveType> types, String value) {
+        var exact = types.stream().filter(type -> type.getLeaveName().equalsIgnoreCase(value)
+                || type.getLeaveCode().equalsIgnoreCase(value) || type.displayName().equalsIgnoreCase(value)).toList();
+        if (!exact.isEmpty()) return exact;
+        // Old exports/templates remain usable after V044 or an administrator renames a built-in type.
+        String legacyCode = "İllik məzuniyyət".equalsIgnoreCase(value) || "Ödənişli məzuniyyət".equalsIgnoreCase(value)
+                ? "ANNUAL" : "Ödənişsiz məzuniyyət".equalsIgnoreCase(value) ? "UNPAID" : null;
+        return legacyCode == null ? List.of() : types.stream()
+                .filter(type -> legacyCode.equalsIgnoreCase(type.getLeaveCode())).toList();
     }
 
     private static LocalDate date(String value) {

@@ -36,6 +36,8 @@ class LeaveBalanceLimitTest {
         var paid = new LeaveType(); paid.setId(1L); paid.setLeaveCode("ANNUAL");
         var unpaid = new LeaveType(); unpaid.setId(2L); unpaid.setLeaveCode("UNPAID");
         when(types.findByTenantId(7L)).thenReturn(List.of(paid, unpaid));
+        when(types.lockForLeave(eq(7L), anyLong())).thenAnswer(call -> types.findByTenantId(7L).stream()
+                .filter(type -> type.getId().equals(call.getArgument(1))).findFirst());
         when(requests.save(any())).thenAnswer(call -> call.getArgument(0));
     }
 
@@ -75,6 +77,41 @@ class LeaveBalanceLimitTest {
         assertThatThrownBy(() -> service.create(payload)).isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Qalıq: 2 gün");
         verify(requests, never()).save(any());
+    }
+
+    @Test void waitingCreationRefreshesTypePolicyBeforeCheckingBalance() {
+        var type = new LeaveType(); type.setId(3L); type.setLeaveCode("CUSTOM_TEST");
+        type.setShortName("TƏ"); type.setDeductFromBalance(false);
+        when(types.findByTenantId(7L)).thenReturn(List.of(type));
+        doAnswer(call -> { type.setDeductFromBalance(true); return null; })
+                .when(entityManager).refresh(type, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        var payload = dto(6); payload.setLeaveTypeId(3L);
+
+        assertThatThrownBy(() -> service.create(payload)).hasMessageContaining("Qalıq: 5 gün");
+
+        verify(types).lockForLeave(7L, 3L);
+        verify(entityManager).refresh(type, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        verify(requests, never()).save(any());
+    }
+
+    @Test void waitingCreationCannotUseATypeArchivedWhileItWaited() {
+        var type = new LeaveType(); type.setId(3L); type.setLeaveCode("CUSTOM_TEST"); type.setShortName("TƏ");
+        when(types.findByTenantId(7L)).thenReturn(List.of(type));
+        doAnswer(call -> { type.setArchived(true); return null; })
+                .when(entityManager).refresh(type, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        var payload = dto(1); payload.setLeaveTypeId(3L);
+
+        assertThatThrownBy(() -> service.create(payload)).hasMessageContaining("Silinmiş məzuniyyət növünü");
+        verify(requests, never()).save(any());
+    }
+
+    @Test void bulkTypeLocksAreDistinctAndSorted() {
+        service.lockTypes(7L, List.of(2L, 1L, 2L));
+        var order = inOrder(types);
+        order.verify(types).lockForLeave(7L, 1L);
+        order.verify(types).lockForLeave(7L, 2L);
+        verify(types, times(1)).lockForLeave(7L, 1L);
+        verify(types, times(1)).lockForLeave(7L, 2L);
     }
 
     @Test void subtractsAlreadyApprovedUsageAndIgnoresPendingUnpaid() {

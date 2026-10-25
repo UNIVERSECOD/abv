@@ -3,7 +3,7 @@ import Layout from '../components/Layout.tsx'
 import SortableHeader from '../components/SortableHeader.tsx'
 import { sortTableRows, TableSort } from '../utils/tableSort.ts'
 import LeaveEmployeeSelect from '../components/LeaveEmployeeSelect.tsx'
-import { leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes, leaveCalendarDays } from '../utils/leaveFilters.ts'
+import { allocateLeaveDebitDays, leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes, leaveCalendarDays } from '../utils/leaveFilters.ts'
 import LeaveTypesPanel from '../components/LeaveTypesPanel.tsx'
 import PermissionAssignmentPage from './PermissionAssignmentPage.tsx'
 import { leaveApi, LeaveBalance, LeavePayload, LeaveRequest, LeaveStatus, LeaveType } from '../api/leaveApi.ts'
@@ -243,12 +243,10 @@ function LeavesPanel() {
   const visibleTypes = visibleLeaveTypes(types, leaves)
   const defaultRows = useMemo(() => sortTableRows(filtered, null, () => null), [filtered])
   const numberById = useMemo(() => new Map(defaultRows.map((leave, index) => [leave.id, index + 1])), [defaultRows])
-  const chargedDays = (leave: LeaveRequest) => {
-    const balance = balanceByEmployee.get(leave.employeeId)
-    const type = types.find(item => item.id === leave.leaveTypeId)
-    const start = balance?.startDate && balance.startDate > leave.startDate ? balance.startDate : leave.startDate
-    return leave.status === 'APPROVED' && type?.deductFromBalance ? leaveCalendarDays(start, leave.endDate) : 0
-  }
+  const debitByRequest = useMemo(() => allocateLeaveDebitDays(leaves,
+    new Set(types.filter(type => type.deductFromBalance).map(type => type.id)),
+    new Map(balances.map(balance => [balance.employeeId, balance.startDate]))), [leaves, types, balances])
+  const chargedDays = (leave: LeaveRequest) => debitByRequest.get(leave.id) ?? 0
   const columns = [
     { key: 'no', label: 'No' }, { key: 'employee', label: 'Əməkdaş' }, { key: 'fin', label: 'FIN' },
     { key: 'start', label: 'Başlanğıc' }, { key: 'end', label: 'Bitmə' }, { key: 'status', label: 'Vəziyyət' },

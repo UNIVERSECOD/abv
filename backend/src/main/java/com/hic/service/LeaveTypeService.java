@@ -18,13 +18,15 @@ import java.util.UUID;
 public class LeaveTypeService {
     private final LeaveTypeRepository types;
     private final com.hic.repository.LeaveRequestRepository requests;
+    private final jakarta.persistence.EntityManager entityManager;
 
     public record Input(String leaveName, String shortName, boolean deductFromBalance) {}
 
     @Transactional
     public LeaveType save(Long id, Input input) {
         Long tenant = tenant();
-        LeaveType type = id == null ? new LeaveType() : require(id, tenant);
+        lockTenant(tenant);
+        LeaveType type = id == null ? new LeaveType() : lockType(id, tenant);
         String name = input.leaveName() == null ? "" : input.leaveName().strip();
         String abbreviation = input.shortName() == null ? "" : input.shortName().strip().toUpperCase(Locale.forLanguageTag("az"));
         if (name.isBlank() || name.length() > 200) throw new BadRequestException("Məzuniyyətin adı 1–200 simvol olmalıdır");
@@ -49,15 +51,28 @@ public class LeaveTypeService {
 
     @Transactional
     public void delete(Long id) {
-        LeaveType type = require(id, tenant());
+        Long tenant = tenant();
+        lockTenant(tenant);
+        LeaveType type = lockType(id, tenant);
         // Retain referenced types so historical requests, reports and balances remain readable.
         type.setArchived(true);
         types.save(type);
     }
 
-    private LeaveType require(Long id, Long tenant) {
-        return types.findByTenantId(tenant).stream().filter(t -> t.getId().equals(id)).findFirst()
+    private LeaveType lockType(Long id, Long tenant) {
+        LeaveType type = types.lockForLeave(tenant, id)
                 .orElseThrow(() -> new ResourceNotFoundException("LeaveType", id));
+        entityManager.refresh(type, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        return type;
+    }
+
+    private void lockTenant(Long tenant) {
+        // Serialize name/abbreviation checks as well as creates; type rows do not yet exist on creation.
+        // NO KEY UPDATE permits leave inserts' tenant FK KEY SHARE locks while metadata waits on a type.
+        if (entityManager.createNativeQuery("SELECT id FROM tenants WHERE id = :tenantId FOR NO KEY UPDATE")
+                .setParameter("tenantId", tenant).getResultList().isEmpty()) {
+            throw new BadRequestException("Tenant tapılmadı");
+        }
     }
 
     private Long tenant() {

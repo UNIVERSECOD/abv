@@ -63,6 +63,7 @@ class LeaveServiceTest {
         var type = new LeaveType(); type.setId(3L); type.setTenantId(7L); type.setLeaveName("İllik məzuniyyət");
         when(employeeRepository.findByTenantIdAndId(7L, 11L)).thenReturn(Optional.of(employee));
         when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(employee));
+        when(leaveTypeRepository.lockForLeave(7L, 3L)).thenReturn(Optional.of(type));
         when(leaveTypeRepository.findByTenantId(7L)).thenReturn(List.of(type));
     }
 
@@ -92,7 +93,6 @@ class LeaveServiceTest {
     void createRejectsLeaveTypeFromAnotherTenant() {
         TenantContext.setTenantId(7L);
         when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(new Employee()));
-        when(employeeRepository.findByTenantIdAndId(7L, 11L)).thenReturn(Optional.of(new Employee()));
         assertThrows(BadRequestException.class, () -> leaveService.create(payload()));
         verify(leaveRequestRepository, never()).save(any());
     }

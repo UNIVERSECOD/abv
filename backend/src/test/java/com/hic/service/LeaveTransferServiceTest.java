@@ -75,6 +75,66 @@ class LeaveTransferServiceTest {
         verify(leaves).create(argThat(dto -> dto.getLeaveTypeId().equals(4L)));
     }
 
+    @Test void importsActiveReplacementWhenArchivedTypeHasTheSameName() {
+        references();
+        var archived = new LeaveType(); archived.setId(3L); archived.setLeaveCode("CUSTOM_OLD");
+        archived.setLeaveName("Təhsil"); archived.setShortName("TƏ"); archived.setArchived(true);
+        var active = new LeaveType(); active.setId(4L); active.setLeaveCode("CUSTOM_NEW");
+        active.setLeaveName("Təhsil"); active.setShortName("TƏ");
+        when(types.findByTenantId(7L)).thenReturn(List.of(archived, active));
+
+        var result = service.importFile(file(List.of(List.of("HR-11", "Test Person", "FIN1234",
+                "Təhsil", "2026-11-01", "2026-11-03", "APPROVED"))));
+
+        assertThat(result.getImportedRows()).isEqualTo(1);
+        verify(leaves).create(argThat(dto -> dto.getLeaveTypeId().equals(4L)));
+    }
+
+    @Test void importsLegacyAnnualNameAfterMigrationRenamesTheBuiltInType() {
+        references();
+        var migrated = new LeaveType(); migrated.setId(3L); migrated.setLeaveCode("ANNUAL");
+        migrated.setLeaveName("Ödənişli məzuniyyət"); migrated.setShortName("M"); migrated.setDeductFromBalance(true);
+        when(types.findByTenantId(7L)).thenReturn(List.of(migrated));
+
+        var result = service.importFile(file(List.of(List.of("HR-11", "Test Person", "FIN1234",
+                "İllik məzuniyyət", "2026-11-01", "2026-11-03", "APPROVED"))));
+
+        assertThat(result.getImportedRows()).isEqualTo(1);
+        verify(leaves).create(argThat(dto -> dto.getLeaveTypeId().equals(3L)));
+    }
+
+    @Test void currentCustomNameTakesPrecedenceOverLegacyAnnualAlias() {
+        references();
+        var migrated = new LeaveType(); migrated.setId(3L); migrated.setLeaveCode("ANNUAL");
+        migrated.setLeaveName("Ödənişli məzuniyyət"); migrated.setShortName("M");
+        var custom = new LeaveType(); custom.setId(4L); custom.setLeaveCode("CUSTOM_NEW");
+        custom.setLeaveName("İllik məzuniyyət"); custom.setShortName("İM");
+        when(types.findByTenantId(7L)).thenReturn(List.of(migrated, custom));
+
+        var result = service.importFile(file(List.of(List.of("HR-11", "Test Person", "FIN1234",
+                "İllik məzuniyyət", "2026-11-01", "2026-11-03", "APPROVED"))));
+
+        assertThat(result.getImportedRows()).isEqualTo(1);
+        verify(leaves).create(argThat(dto -> dto.getLeaveTypeId().equals(4L)));
+    }
+
+    @Test void archivedTypeCodeRejectsTheWholeFileBeforeWritingValidRows() {
+        references();
+        var active = new LeaveType(); active.setId(3L); active.setLeaveCode("ANNUAL");
+        active.setLeaveName("İllik məzuniyyət");
+        var archived = new LeaveType(); archived.setId(4L); archived.setLeaveCode("CUSTOM_OLD");
+        archived.setLeaveName("Köhnə növ"); archived.setShortName("K"); archived.setArchived(true);
+        when(types.findByTenantId(7L)).thenReturn(List.of(active, archived));
+
+        var result = service.importFile(file(List.of(row("HR-11", "2026-11-01", "2026-11-03", "APPROVED"),
+                List.of("HR-11", "Test Person", "FIN1234", "CUSTOM_OLD", "2026-11-05", "2026-11-06", "APPROVED"))));
+
+        assertThat(result.isSuccessful()).isFalse();
+        assertThat(result.getRejectedRows()).isEqualTo(2);
+        assertThat(result.getErrors()).singleElement().satisfies(error -> assertThat(error.getRow()).isEqualTo(3));
+        verify(leaves, never()).create(any());
+    }
+
     @Test
     void importsValidRowsUsingHrCodeAndDefaultsToApproved() {
         references();

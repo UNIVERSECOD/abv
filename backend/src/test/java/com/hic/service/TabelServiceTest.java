@@ -99,6 +99,28 @@ class TabelServiceTest {
     }
 
     @Test
+    void repeatedLegacyAbbreviationListsEachLeaveNameOnlyOnce() {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        var annual = new com.hic.model.LeaveType(); annual.setId(1L); annual.setShortName("M"); annual.setLeaveName("Annual");
+        var sick = new com.hic.model.LeaveType(); sick.setId(2L); sick.setShortName("M"); sick.setLeaveName("Sick");
+        when(leaveTypeRepository.findByTenantId(7L)).thenReturn(List.of(annual, sick));
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        var requests = new java.util.ArrayList<LeaveRequest>();
+        for (int day = 1; day <= 3; day++) {
+            var leave = new LeaveRequest(); leave.setEmployeeId(11L); leave.setLeaveTypeId(day == 2 ? 2L : 1L);
+            leave.setStartDate(LocalDate.of(2026, 4, day)); leave.setEndDate(leave.getStartDate());
+            requests.add(leave);
+        }
+        when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
+                7L, List.of(11L), LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30))).thenReturn(requests);
+        when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) ->
+                new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true));
+        var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
+        assertEquals("Annual, Sick", data.getLeaveLegend().get("M"));
+    }
+
+    @Test
     void getMonthlyTabel_computesDailyValuesAndTotals() {
         TenantContext.setTenantId(7L);
 

@@ -74,6 +74,7 @@ public class LeaveService {
     public LeaveRequestDTO create(LeaveRequestDTO dto) {
         Long tenantId = requireTenantId();
         lockEmployees(tenantId, List.of(requireEmployeeId(dto.getEmployeeId())));
+        lockTypes(tenantId, List.of(requireLeaveTypeId(dto.getLeaveTypeId())));
         validate(dto, tenantId, null);
         validatePaidBalance(dto, tenantId, null);
         LeaveRequest req = new LeaveRequest();
@@ -96,6 +97,7 @@ public class LeaveService {
         lockEmployees(requireTenantId(), List.of(req.getEmployeeId()));
         if (status == null) throw new BadRequestException("Vəziyyəti seçin");
         if (status == LeaveStatus.APPROVED) {
+            lockTypes(requireTenantId(), List.of(req.getLeaveTypeId()));
             LeaveRequestDTO dto = toDTO(req);
             dto.setStatus(status);
             validate(dto, requireTenantId(), id);
@@ -129,6 +131,11 @@ public class LeaveService {
         return id;
     }
 
+    private Long requireLeaveTypeId(Long id) {
+        if (id == null) throw new BadRequestException("Məzuniyyət növünü seçin");
+        return id;
+    }
+
     // Serialize balance-changing operations per employee; sorted order also protects bulk imports.
     void lockEmployees(Long tenantId, List<Long> employeeIds) {
         employeeIds.stream().distinct().sorted().forEach(id -> {
@@ -136,6 +143,15 @@ public class LeaveService {
                     .orElseThrow(() -> new BadRequestException("Əməkdaş tapılmadı"));
             // Import may have loaded staff before waiting for this lock: discard that stale snapshot.
             entityManager.refresh(employee, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+        });
+    }
+
+    // Metadata writers use the same lock, so a waiting approval sees the current debit/archive policy.
+    void lockTypes(Long tenantId, List<Long> typeIds) {
+        typeIds.stream().distinct().sorted().forEach(id -> {
+            var type = leaveTypeRepository.lockForLeave(tenantId, id)
+                    .orElseThrow(() -> new BadRequestException("Məzuniyyət növü tapılmadı"));
+            entityManager.refresh(type, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
         });
     }
 
@@ -210,6 +226,7 @@ public class LeaveService {
     public LeaveRequestDTO update(Long id, LeaveRequestDTO dto) {
         LeaveRequest req = lockLeaveInTenant(id);
         lockEmployees(requireTenantId(), List.of(req.getEmployeeId(), requireEmployeeId(dto.getEmployeeId())));
+        lockTypes(requireTenantId(), List.of(requireLeaveTypeId(dto.getLeaveTypeId())));
         if (dto.getStatus() == null) dto.setStatus(req.getStatus());
         validate(dto, requireTenantId(), id);
         validatePaidBalance(dto, requireTenantId(), id);

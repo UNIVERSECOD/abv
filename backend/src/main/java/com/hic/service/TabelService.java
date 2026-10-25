@@ -110,14 +110,14 @@ public class TabelService {
         Map<Long, Map<LocalDate, String>> vacationByEmployee = new HashMap<>();
         Map<Long, com.hic.model.LeaveType> leaveTypes = new HashMap<>();
         leaveTypeRepository.findByTenantId(tenantId).forEach(t -> leaveTypes.put(t.getId(), t));
-        Map<String, String> leaveLegend = new java.util.TreeMap<>();
+        Map<String, Set<String>> leaveLegendNames = new java.util.TreeMap<>();
         if (!employees.isEmpty()) {
             for (LeaveRequest leave : leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
                     tenantId, employees.stream().map(Employee::getId).toList(), start, end)) {
                 var type = leaveTypes.get(leave.getLeaveTypeId());
                 String code = type == null || type.getShortName() == null ? "M" : type.getShortName();
-                leaveLegend.merge(code, type == null ? "Məzuniyyət" : type.displayName(),
-                        (a, b) -> a.equals(b) ? a : a + ", " + b);
+                leaveLegendNames.computeIfAbsent(code, ignored -> new java.util.LinkedHashSet<>())
+                        .add(type == null ? "Məzuniyyət" : type.displayName());
                 LocalDate from = leave.getStartDate().isBefore(start) ? start : leave.getStartDate();
                 LocalDate through = leave.getEndDate().isAfter(end) ? end : leave.getEndDate();
                 var dates = vacationByEmployee.computeIfAbsent(leave.getEmployeeId(), ignored -> new HashMap<>());
@@ -213,6 +213,8 @@ public class TabelService {
         dto.setDaysInMonth(yearMonth.lengthOfMonth());
         dto.setEmployees(rows.size());
         dto.setRows(rows);
+        Map<String, String> leaveLegend = new java.util.TreeMap<>();
+        leaveLegendNames.forEach((code, names) -> leaveLegend.put(code, String.join(", ", names)));
         dto.setLeaveLegend(leaveLegend);
         return dto;
     }

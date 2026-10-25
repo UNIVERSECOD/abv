@@ -390,6 +390,30 @@ class EmployeeServiceTest {
     }
 
     @Test
+    void unrelatedEmployeeEditPreservesOriginalBalanceAndCompatibilityOffset() {
+        testEmployee.setAnnualLeaveBalance(12); testEmployee.setLegacyLeaveBalanceOffset(7);
+        testEmployeeDTO.setAnnualLeaveBalance(19); testEmployeeDTO.setFirstName("Changed");
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
+        when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        var result = employeeService.update(1L, testEmployeeDTO);
+        assertThat(testEmployee.getAnnualLeaveBalance()).isEqualTo(12);
+        assertThat(testEmployee.getLegacyLeaveBalanceOffset()).isEqualTo(7);
+        assertThat(result.getAnnualLeaveBalance()).isEqualTo(19);
+    }
+
+    @Test
+    void explicitOpeningBalanceEditReplacesEffectiveAmountWithoutRetainingOffset() {
+        testEmployee.setAnnualLeaveBalance(12); testEmployee.setLegacyLeaveBalanceOffset(7);
+        testEmployeeDTO.setAnnualLeaveBalance(25);
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
+        when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        var result = employeeService.update(1L, testEmployeeDTO);
+        assertThat(testEmployee.getAnnualLeaveBalance()).isEqualTo(25);
+        assertThat(testEmployee.getLegacyLeaveBalanceOffset()).isZero();
+        assertThat(result.getAnnualLeaveBalance()).isEqualTo(25);
+    }
+
+    @Test
     void update_preservesFieldsThatAreNotEditableInTheEmployeeForm() {
         testEmployee.setCardId("CARD-100");
         testEmployee.setFaceId("FACE-100");

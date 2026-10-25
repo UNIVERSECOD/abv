@@ -95,6 +95,7 @@ Register-ScheduledTask `
     -Force | Out-Null
 
 Start-ScheduledTask -TaskName $FolderPickerTaskName
+& (Join-Path $PSScriptRoot 'install-backup-worker.ps1') -ProjectRoot $resolvedProjectRoot
 
 # Task launch is asynchronous. Verify the helper, not just task registration.
 $pickerReady = $false

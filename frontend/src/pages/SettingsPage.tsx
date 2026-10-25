@@ -7,6 +7,7 @@ import { authApi } from '../api/authApi.ts'
 import { BackupSettings, settingsApi } from '../api/settingsApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { toast } from '../store/toastStore.ts'
+import BackupOperationsPanel from '../components/BackupOperationsPanel.tsx'
 
 const formatBytes = (bytes: number) => {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
@@ -535,6 +536,7 @@ export default function SettingsPage() {
                       <p className="mt-5 text-sm text-red-600" role="alert">{backupError}</p>
                     )}
 
+                    <BackupOperationsPanel />
                     <div className="mt-6 flex justify-end">
                       <button
                         onClick={handleBackupSave}

@@ -50,6 +50,10 @@ public class LeaveRequest {
     @Column(name = "balance_charged_days", nullable = false)
     private Integer balanceChargedDays = 0;
 
+    // Historical request-level charges are trusted provenance, never client input.
+    @Column(name = "legacy_balance_accounting", nullable = false)
+    private boolean legacyBalanceAccounting;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

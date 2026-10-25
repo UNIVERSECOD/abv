@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { lazy, Suspense, useEffect } from 'react'
 import { useAuthStore } from './store/authStore.ts'
 import { t } from './i18n/index.ts'
@@ -20,12 +20,13 @@ const AttendancePage = lazy(() => import('./pages/AttendancePage.tsx'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx'))
 const TabelPage = lazy(() => import('./pages/TabelPage.tsx'))
 const WorkSchedulePage = lazy(() => import('./pages/WorkSchedulePage.tsx'))
-const PermissionAssignmentPage = lazy(() => import('./pages/PermissionAssignmentPage.tsx'))
+const PermissionAssignmentPage = lazy(() => import('./pages/PermissionsLeavePage.tsx'))
 const DevicesPage = lazy(() => import('./pages/DevicesPage.tsx'))
 const AccessLogsPage = lazy(() => import('./pages/AccessLogsPage.tsx'))
 const DeviceLogSearchPage = lazy(() => import('./pages/DeviceLogSearchPage.tsx'))
 const DeviceEmployeeImportPage = lazy(() => import('./pages/DeviceEmployeeImportPage.tsx'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage.tsx'))
+const BackupRestoreProgressPage = lazy(() => import('./pages/BackupRestoreProgressPage.tsx'))
 const AuditLogPage = lazy(() => import('./pages/AuditLogPage.tsx'))
 
 const HR_ROLES = ['HEAD_OFFICE_HR', 'OFFICE_HR', 'DEPARTMENT_HR']
@@ -52,11 +53,12 @@ function HeadOfficeHrRoute({ children }: { children: React.ReactNode }) {
 }
 
 function SessionExpiryGuard() {
+  const { pathname } = useLocation()
   const { token, isAuthenticated, logout } = useAuthStore()
   const navigate = useNavigate()
 
   useEffect(() => {
-    if (!isAuthenticated || !token) return
+    if (!isAuthenticated || !token || pathname === '/backup-progress') return
 
     let timeoutId: number | undefined
     let sessionEnded = false
@@ -96,7 +98,7 @@ function SessionExpiryGuard() {
       window.removeEventListener('focus', endExpiredSession)
       document.removeEventListener('visibilitychange', checkWhenActive)
     }
-  }, [isAuthenticated, logout, navigate, token])
+  }, [isAuthenticated, logout, navigate, token, pathname])
 
   return null
 }
@@ -125,6 +127,7 @@ export default function App() {
       >
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/backup-progress" element={<BackupRestoreProgressPage />} />
           <Route path="/initial-setup" element={<InitialSetupPage />} />
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/register" element={<SignupPage />} />

@@ -38,6 +38,7 @@ public class EmployeeResponseDTO {
     private LocalDate contractEndDate;
     private Integer annualLeaveDuration;
     private Integer annualLeaveBalance;
+    private LocalDate leaveBalanceStartDate;
     private String fatherName;
     private String groupName;
     private BigDecimal salary;

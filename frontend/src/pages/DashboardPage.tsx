@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import DashboardAttendancePanel from '../components/DashboardAttendancePanel.tsx'
+import LeaveAttendanceWarning from '../components/LeaveAttendanceWarning.tsx'
 import client from '../api/client.ts'
 import { doorRoleLabel, statusLabel } from '../i18n/labels.ts'
 import { formatAttendanceDateTime } from '../utils/dateTime.ts'
@@ -103,6 +104,7 @@ export default function DashboardPage() {
         </div>
 
         <DashboardAttendancePanel totalEmployees={stats?.totalEmployees} />
+        <LeaveAttendanceWarning />
 
         {/* Device Status */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">

@@ -18,6 +18,8 @@ target/
 
 # Node / React
 node_modules/
+.npm-cache/
+runtime/npm-cache/
 dist/
 build/
 .env
@@ -37,3 +39,6 @@ runtime/backup-settings.json
 runtime/backup-status.json
 # Local verification output may contain customer data; never deliver it in Git.
 runtime/audit/
+runtime/backup-operations/
+runtime/backup-host.lock
+runtime/device-removal-paused.json

@@ -207,7 +207,7 @@ export default function TabelPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
-                <p className="mt-1 text-sm text-slate-500">Normanı ödəyən gün — 1; digər günlər — saat:dəqiqə; istirahət günü — Q/İ; təsdiqlənmiş məzuniyyət — M. Overtime qrafik bitdikdən sonra 1 saat tamam olduqda hesablanır.</p>
+                <p className="mt-1 text-sm text-slate-500">Normanı ödəyən gün — 1; digər günlər — saat:dəqiqə; istirahət günü — Q/İ; təsdiqlənmiş məzuniyyət — növün qısaltması. Overtime qrafik bitdikdən sonra 1 saat tamam olduqda hesablanır.</p>
               </div>
               <button onClick={handleExport} disabled={!data || exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                 {t('reports.excelExport')}
@@ -282,12 +282,12 @@ export default function TabelPage() {
                       <td className="sticky left-[360px] z-20 bg-white px-3 py-2 min-w-[140px] max-w-[140px] truncate" title={row.position}>{row.position}</td>
                       {Array.from({ length: data.daysInMonth }, (_, day) => {
                         const value = row.daily[String(day + 1)]
-                        const isCode = value === 'Q/I' || value === 'Q/İ' || value === 'M'
+                        const isCode = typeof value === 'string'
                         const isEmpty = value === null || value === undefined
                         const mcgDay = row.mcgDaily?.[String(day + 1)]
                         const unresolved = mcgDay?.status === 'OPEN_SESSION' || mcgDay?.status === 'MISSING_EXIT'
                         const detail = mcgDay && !isEmpty && !isCode
-                        const color = value === 'M' ? 'font-semibold text-purple-700' : !detail ? 'text-black'
+                        const color = typeof value === 'string' && Object.prototype.hasOwnProperty.call(data.leaveLegend ?? {}, value) ? 'font-semibold text-purple-700' : !detail ? 'text-black'
                           : mcgDay.overtimeMinutes > 0 ? 'font-semibold text-blue-600'
                             : mcgDay.fullDay ? 'font-semibold text-emerald-700'
                               : mcgDay.sourceVerified && mcgDay.workedMinutes > 0 && mcgDay.workedMinutes < mcgDay.expectedMinutes
@@ -309,6 +309,9 @@ export default function TabelPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            <div className="flex flex-wrap gap-4 border-t p-4 text-sm text-slate-600">
+              {Object.entries(data?.leaveLegend ?? {}).map(([code, name]) => <span key={code}><strong>{code}</strong> — {name}</span>)}
             </div>
           </section>
         </div>

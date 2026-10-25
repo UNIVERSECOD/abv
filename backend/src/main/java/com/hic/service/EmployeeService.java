@@ -380,7 +380,10 @@ public class EmployeeService {
         employee.setHireDate(dto.getHireDate() != null ? dto.getHireDate() : AppTimeZone.today());
         employee.setContractEndDate(dto.getContractEndDate());
         employee.setAnnualLeaveDuration(dto.getAnnualLeaveDuration());
-        employee.setAnnualLeaveBalance(dto.getAnnualLeaveBalance());
+        if (!java.util.Objects.equals(dto.getAnnualLeaveBalance(), employee.openingLeaveBalance())) {
+            employee.setAnnualLeaveBalance(dto.getAnnualLeaveBalance());
+            employee.setLegacyLeaveBalanceOffset(0);
+        }
         if (dto.getGroupName() != null) {
             employee.setGroupName(dto.getGroupName());
         }
@@ -443,7 +446,8 @@ public class EmployeeService {
         dto.setHireDate(employee.getHireDate());
         dto.setContractEndDate(employee.getContractEndDate());
         dto.setAnnualLeaveDuration(employee.getAnnualLeaveDuration());
-        dto.setAnnualLeaveBalance(employee.getAnnualLeaveBalance());
+        dto.setAnnualLeaveBalance(employee.openingLeaveBalance());
+        dto.setLeaveBalanceStartDate(employee.getLeaveBalanceStartDate());
         dto.setFatherName(employee.getFatherName());
         dto.setGroupName(employee.getGroupName());
         dto.setSalary(employee.getSalary());

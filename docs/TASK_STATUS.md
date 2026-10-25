@@ -1,5 +1,26 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-26 — Approved configurable-leave merge to main
+
+- User approved merging `codex/leave-types` to `main`, pushing and starting Docker. Preserved main's calendar-month/year report controls and single-date hourly permission rule; retained the newer leave/type tables, bulk Excel transfer, balances, dashboard warning, Tabel markers and sorting.
+- Reconciled the two released V043 histories without editing their SQL or repairing Flyway. A strict script/checksum selector loads the matching lineage. New V045 adds compatibility metadata; old main request-level charges use a fixed offset plus stored charge provenance. Existing employee amounts and historical request fields remain unchanged. Unknown histories fail closed. See `LEAVE_MIGRATION_COMPATIBILITY.md`.
+- Validation passed: **103 focused / 585 full backend tests**, clean package; **57 frontend tests**, lint/build; both Docker builds and Compose configuration. Actual final-image PostgreSQL checks passed fresh installation and both upgrade paths, 14 API flow groups, original-column/history preservation, raw-balance preservation, legacy refund/approval/reassignment and repeated-start migration validation. Test fixtures have no real devices. ISAPI source is unchanged from the preceding 34-test audit and was not rebuilt.
+- Final-image browser smoke passed login, dashboard first five of six, the exact six-row daily filter, month/year controls and invalid-year feedback/export blocking, with no console errors. The fixture's missing localhost3103 CORS origin was corrected without changing source or customer settings.
+- Live Docker delivery and fresh backup/preservation verification are recorded separately after deployment.
+
+## 2026-10-19 — Full backup download and guarded restore
+
+- Added authenticated, single-installation/single-tenant CREATE/ZIP download and upload/inspect/confirmed RESTORE APIs plus Settings UI. A host worker performs the privileged work outside the backend, with bounded ZIP extraction, hashes, protected Windows ACLs, fixed operations and a shared lock with daily backups.
+- Restore first validates temporary PostgreSQL databases, then creates and persists a complete current database/photo/configuration backup. Existing DBs are renamed into retained rollback slots; configuration/photo/application health failures recover the original state. Journaled swaps support restart recovery. Host-specific paths/ports/connection credentials remain valid; archived application encryption/JWT/ISAPI keys restore with their data. Existing Docker image IDs are pinned during reconfiguration.
+- Restore progress uses an expiring status-only capability, avoiding logout during JWT changes. Physical device-removal jobs are paused after restore for explicit administrator review. No customer restore or terminal write was performed.
+- Verification: 531 backend tests; 11 frontend tests; lint/build; Docker builds/config/HTTP health; 33 assertions on both PowerShell 5.1 and 7; 70 legacy backup regressions per shell; 13 real disposable PostgreSQL restore/rollback checks. Synthetic UI states verified download/preview/confirmation/progress. Live CREATE-only worker and archive-file integrity passed; HR/login/schedule/device/leave aggregate counts, photos and configuration were preserved. Native SCM restore/reboot and a new installer EXE remain unverified; ISAPI source/suite unchanged. See `BACKUP_RESTORE.md`.
+
+## 2026-10-18 — Vacation management and MCG Tabel marker
+
+- Added İcazə / Məzuniyyət tabs, leave create/edit/cancel and Excel template/import/full export using existing leave tables. Approved inclusive vacation dates display M in Tabel/UI/Excel; existing work totals, permissions and MCG overtime rules remain unchanged.
+- Imports use HR employee codes, validate tenant/type/FIN/dates, reject duplicate/overlapping requests and write no rows if any row fails. Cancellation preserves history. No migration or physical-device operation.
+- Covered by the current full test suite and isolated API/browser checks; delivered in commit `3d1cdd2` on `codex/mcg`.
+
 ## 2026-10-13 — Month/year-specific report period controls
 
 - MONTHLY uses all twelve Azerbaijani month names and a year field with recent-year suggestions; YEARLY uses only the year field. Any valid four-digit year remains enterable, not only suggested years. Generic day shortcuts and partial-day date inputs are hidden in both summary tabs and remain unchanged in DAILY/DETAILS.

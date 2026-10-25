@@ -11,6 +11,10 @@ import java.time.LocalDateTime;
 public class LeaveRequestDTO {
 
     private Long id;
+    private String employeeCode;
+    private String employeeName;
+    private String finNumber;
+    private String leaveTypeName;
 
     @NotNull(message = "Employee ID is required")
     private Long employeeId;
@@ -28,6 +32,9 @@ public class LeaveRequestDTO {
     private Long approvedBy;
     private LocalDate approvalDate;
     private Boolean deductFromLeaveBalance;
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
     private Integer balanceChargedDays;
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.READ_ONLY)
+    private boolean legacyBalanceAccounting;
     private LocalDateTime createdAt;
 }

@@ -1381,8 +1381,9 @@ export default function EmployeesPage() {
                   <input type="number" value={form.annualLeaveDuration} onChange={(e) => setFormField('annualLeaveDuration', e.target.value ? Number(e.target.value) : '')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">İLLİK MƏZUNİYYƏT BALANSI</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">MƏZUNİYYƏTİN BAŞLANĞIC QALIĞI</label>
                   <input type="number" value={form.annualLeaveBalance} onChange={(e) => setFormField('annualLeaveBalance', e.target.value ? Number(e.target.value) : '')} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  <p className="mt-1 text-xs text-gray-500">Avtomatik hesablamanın başlanğıc qalığıdır. Cari qalıq Məzuniyyətlər bölməsində göstərilir.</p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">MƏŞĞULLUQ STATUSU</label>

@@ -51,6 +51,7 @@ public class SecurityConfig {
                  .requestMatchers("/api/auth/refresh").permitAll()
                  .requestMatchers("/api/auth/verify").permitAll()
                  .requestMatchers("/api/health").permitAll()
+                 .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/backup-progress/*").permitAll()
                  .requestMatchers("/actuator/health").permitAll()
                  .anyRequest().authenticated()
              )

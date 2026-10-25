@@ -1,5 +1,7 @@
 # Attendra avtomatik backup quraşdırması
 
+Proqramdan əl ilə tam backup yaratmaq, endirmək və əvvəlcədən cari vəziyyəti qoruyaraq bərpa etmək üçün [BACKUP_RESTORE.md](BACKUP_RESTORE.md) sənədinə baxın. Bu əməliyyatlar ayrıca host worker istifadə edir; aşağıdakı gündəlik backup qaydaları ayrıca qalır.
+
 Backup bölməsi Windows host-da işləyən planlı tapşırıqla birlikdə istifadə olunur. Skript hər gün ən çox bir uğurlu backup yaradır və 183 gündən köhnə tamamlanmış backup qovluqlarını yalnız yeni backup uğurla bitdikdən sonra silir.
 
 Backup-a aşağıdakılar daxildir:

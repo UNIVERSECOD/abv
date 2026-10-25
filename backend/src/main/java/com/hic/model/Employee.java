@@ -88,6 +88,16 @@ public class Employee {
     @Column(name = "annual_leave_balance")
     private Integer annualLeaveBalance;
 
+    @Column(name = "legacy_leave_balance_offset", nullable = false)
+    private int legacyLeaveBalanceOffset;
+
+    public Integer openingLeaveBalance() {
+        return annualLeaveBalance == null ? null : Math.addExact(annualLeaveBalance, legacyLeaveBalanceOffset);
+    }
+
+    @Column(name = "leave_balance_start_date", nullable = false)
+    private LocalDate leaveBalanceStartDate = com.hic.util.AppTimeZone.today();
+
     @Column(name = "father_name")
     private String fatherName;
 

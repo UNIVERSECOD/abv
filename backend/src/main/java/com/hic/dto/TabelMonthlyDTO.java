@@ -16,6 +16,7 @@ public class TabelMonthlyDTO {
     private int daysInMonth;
     private int employees;
     private List<RowDTO> rows;
+    private Map<String, String> leaveLegend = Map.of();
 
     @Data
     public static class RowDTO {

@@ -59,6 +59,7 @@ public class TabelService {
     private final HolidayPermissionRepository holidayPermissionRepository;
     private final AttendanceScheduleResolver attendanceScheduleResolver;
     private final McgTabelProjectionService mcgProjectionService;
+    private final com.hic.repository.LeaveTypeRepository leaveTypeRepository;
 
     public TabelMonthlyDTO getMonthlyTabel(int year,
                                            int month,
@@ -106,7 +107,23 @@ public class TabelService {
         }
 
         Map<Long, Set<LocalDate>> leaveByEmployee = buildLeaveDaysByEmployee(tenantId, employees, start, end);
-        Map<Long, Set<LocalDate>> permissionByEmployee = buildFullDayPermissionDaysByEmployee(tenantId, employees, start, end);
+        Map<Long, Map<LocalDate, String>> vacationByEmployee = new HashMap<>();
+        Map<Long, com.hic.model.LeaveType> leaveTypes = new HashMap<>();
+        leaveTypeRepository.findByTenantId(tenantId).forEach(t -> leaveTypes.put(t.getId(), t));
+        Map<String, Set<String>> leaveLegendNames = new java.util.TreeMap<>();
+        if (!employees.isEmpty()) {
+            for (LeaveRequest leave : leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
+                    tenantId, employees.stream().map(Employee::getId).toList(), start, end)) {
+                var type = leaveTypes.get(leave.getLeaveTypeId());
+                String code = type == null || type.getShortName() == null ? "M" : type.getShortName();
+                leaveLegendNames.computeIfAbsent(code, ignored -> new java.util.LinkedHashSet<>())
+                        .add(type == null ? "Məzuniyyət" : type.displayName());
+                LocalDate from = leave.getStartDate().isBefore(start) ? start : leave.getStartDate();
+                LocalDate through = leave.getEndDate().isAfter(end) ? end : leave.getEndDate();
+                var dates = vacationByEmployee.computeIfAbsent(leave.getEmployeeId(), ignored -> new HashMap<>());
+                for (LocalDate date = from; !date.isAfter(through); date = date.plusDays(1)) dates.put(date, code);
+            }
+        }
         Map<Long, Set<LocalDate>> holidayByEmployee = buildHolidayDaysByEmployee(tenantId, employees, start, end);
         boolean mcg = mode == CalculationMode.MCG;
         var projector = mcg ? mcgProjectionService.forMonth(tenantId, employees, start, end) : null;
@@ -131,16 +148,15 @@ public class TabelService {
             int totalMinutes = 0;
 
             Set<LocalDate> leaveDates = leaveByEmployee.getOrDefault(employee.getId(), Set.of());
-            Set<LocalDate> permissionDates = permissionByEmployee.getOrDefault(employee.getId(), Set.of());
             Set<LocalDate> holidayDates = holidayByEmployee.getOrDefault(employee.getId(), Set.of());
 
             for (int day = 1; day <= yearMonth.lengthOfMonth(); day++) {
                 LocalDate date = yearMonth.atDay(day);
                 Object value;
 
-                if (leaveDates.contains(date)) {
-                    value = "M";
-                } else if (holidayDates.contains(date) || permissionDates.contains(date)) {
+                if (vacationByEmployee.getOrDefault(employee.getId(), Map.of()).containsKey(date)) {
+                    value = vacationByEmployee.get(employee.getId()).get(date);
+                } else if (holidayDates.contains(date) || leaveDates.contains(date)) {
                     value = mcg ? "Q/İ" : QI_CODE;
                 } else {
                     DailyAttendanceSummary summary = summariesByDate.get(date);
@@ -197,6 +213,9 @@ public class TabelService {
         dto.setDaysInMonth(yearMonth.lengthOfMonth());
         dto.setEmployees(rows.size());
         dto.setRows(rows);
+        Map<String, String> leaveLegend = new java.util.TreeMap<>();
+        leaveLegendNames.forEach((code, names) -> leaveLegend.put(code, String.join(", ", names)));
+        dto.setLeaveLegend(leaveLegend);
         return dto;
     }
 
@@ -299,6 +318,9 @@ public class TabelService {
                 if (mcg) totalCell.setCellStyle(ordinaryHoursStyle);
             }
 
+            for (var legend : tabel.getLeaveLegend().entrySet()) {
+                sheet.createRow(++rowIndex).createCell(0).setCellValue(legend.getKey() + " = " + legend.getValue());
+            }
             for (int i = 0; i <= 5; i++) {
                 sheet.autoSizeColumn(i);
             }
@@ -321,7 +343,7 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ; təsdiqlənmiş məzuniyyət = M.");
+                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ. Məzuniyyət qısaltmalarının açıqlaması aşağıda verilir.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "Qrafik bitdikdən sonrakı faktiki giriş–çıxış müddətləri 60 dəqiqəyə çatdıqda overtime sayılır; aradakı boşluqlar sayılmır. Göy = overtime, qırmızı = az iş, yaşıl 1 = norma, qara = digər.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
@@ -359,24 +381,8 @@ public class TabelService {
 
         List<Long> employeeIds = employees.stream().map(Employee::getId).toList();
 
-        List<LeaveRequest> leaveRequests = leaveRequestRepository
-                .findApprovedByTenantAndEmployeeIdsAndDateRange(tenantId, employeeIds, start, end);
-        for (LeaveRequest leaveRequest : leaveRequests) {
-            addDateRange(result, leaveRequest.getEmployeeId(), leaveRequest.getStartDate(), leaveRequest.getEndDate(), start, end);
-        }
-
-        return result;
-    }
-
-    private Map<Long, Set<LocalDate>> buildFullDayPermissionDaysByEmployee(Long tenantId,
-                                                                            List<Employee> employees,
-                                                                            LocalDate start,
-                                                                            LocalDate end) {
-        Map<Long, Set<LocalDate>> result = new HashMap<>();
-        if (employees.isEmpty()) return result;
-
         List<EmployeePermission> employeePermissions = employeePermissionRepository.findByDateRange(tenantId, start, end);
-        Set<Long> employeeIdSet = employees.stream().map(Employee::getId).collect(java.util.stream.Collectors.toSet());
+        Set<Long> employeeIdSet = new HashSet<>(employeeIds);
         for (EmployeePermission permission : employeePermissions) {
             if (permission.getEmployeeId() == null || !employeeIdSet.contains(permission.getEmployeeId())) {
                 continue;

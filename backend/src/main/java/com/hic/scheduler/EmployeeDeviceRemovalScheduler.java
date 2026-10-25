@@ -12,12 +12,15 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 public class EmployeeDeviceRemovalScheduler {
+    @org.springframework.beans.factory.annotation.Value("${app.runtime-dir:runtime}")
+    private String runtimeDirectory = "runtime";
     private final TenantRepository tenants;
     private final EmployeeDeviceRemovalService removals;
 
     @Scheduled(fixedDelayString = "${employee.removal.retry-ms:60000}", initialDelay = 60000,
             scheduler = "deviceRemovalScheduler")
     public void retryPending() {
+        if (java.nio.file.Files.exists(java.nio.file.Path.of(runtimeDirectory, "device-removal-paused.json"))) return;
         for (var tenant : tenants.findAll()) {
             try {
                 TenantContext.setTenantId(tenant.getId());

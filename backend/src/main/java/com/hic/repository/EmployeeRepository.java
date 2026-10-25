@@ -17,6 +17,10 @@ import java.util.Optional;
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select e from Employee e where e.tenantId = :tenantId and e.id = :id")
+    Optional<Employee> lockForLeave(@Param("tenantId") Long tenantId, @Param("id") Long id);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Employee e where e.tenantId = :tenantId and e.id = :id")
     Optional<Employee> lockForTermination(@Param("tenantId") Long tenantId, @Param("id") Long id);
 
     // Tenant-aware methods

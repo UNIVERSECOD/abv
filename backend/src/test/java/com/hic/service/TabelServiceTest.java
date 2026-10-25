@@ -59,6 +59,8 @@ class TabelServiceTest {
     private AttendanceScheduleResolver attendanceScheduleResolver;
     @Mock
     private McgTabelProjectionService mcgProjectionService;
+    @Mock
+    private com.hic.repository.LeaveTypeRepository leaveTypeRepository;
 
     @InjectMocks
     private TabelService tabelService;
@@ -66,6 +68,56 @@ class TabelServiceTest {
     @AfterEach
     void clearContext() {
         TenantContext.clear();
+    }
+
+    @Test
+    void vacationOverridesRestDaysAcrossMonthBoundaryAndExportsMWithoutAddingWork() throws Exception {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        employee.setFirstName("Test"); employee.setLastName("Vacation");
+        var vacation = new LeaveRequest(); vacation.setEmployeeId(11L);
+        vacation.setStartDate(LocalDate.of(2026, 3, 30)); vacation.setEndDate(LocalDate.of(2026, 4, 2));
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
+                7L, List.of(11L), LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30))).thenReturn(List.of(vacation));
+        when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) ->
+                new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true));
+        var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
+        var row = data.getRows().get(0);
+        assertEquals("M", row.getDaily().get(1));
+        assertEquals("M", row.getDaily().get(2));
+        assertEquals("Q/İ", row.getDaily().get(3));
+        assertEquals(0, row.getWorkingDays());
+        assertEquals(0.0, row.getTotalHours());
+        assertEquals(0.0, row.getOvertimeHours());
+        try (var book = WorkbookFactory.create(new ByteArrayInputStream(tabelService.exportMonthlyTabel(
+                2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG)))) {
+            assertEquals("M", book.getSheetAt(0).getRow(2).getCell(4).getStringCellValue());
+            assertEquals("M", book.getSheetAt(0).getRow(2).getCell(5).getStringCellValue());
+            assertEquals("Q/İ", book.getSheetAt(0).getRow(2).getCell(6).getStringCellValue());
+        }
+    }
+
+    @Test
+    void repeatedLegacyAbbreviationListsEachLeaveNameOnlyOnce() {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        var annual = new com.hic.model.LeaveType(); annual.setId(1L); annual.setShortName("M"); annual.setLeaveName("Annual");
+        var sick = new com.hic.model.LeaveType(); sick.setId(2L); sick.setShortName("M"); sick.setLeaveName("Sick");
+        when(leaveTypeRepository.findByTenantId(7L)).thenReturn(List.of(annual, sick));
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        var requests = new java.util.ArrayList<LeaveRequest>();
+        for (int day = 1; day <= 3; day++) {
+            var leave = new LeaveRequest(); leave.setEmployeeId(11L); leave.setLeaveTypeId(day == 2 ? 2L : 1L);
+            leave.setStartDate(LocalDate.of(2026, 4, day)); leave.setEndDate(leave.getStartDate());
+            requests.add(leave);
+        }
+        when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
+                7L, List.of(11L), LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30))).thenReturn(requests);
+        when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) ->
+                new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true));
+        var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
+        assertEquals("Annual, Sick", data.getLeaveLegend().get("M"));
     }
 
     @Test

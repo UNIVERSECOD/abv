@@ -68,6 +68,7 @@ export interface Employee {
   contractEndDate?: string
   annualLeaveDuration?: number
   annualLeaveBalance?: number
+  leaveBalanceStartDate?: string
   groupName?: string
   salary?: number
   hourlyRate?: number
@@ -505,6 +506,7 @@ export interface McgTabelDay {
 }
 
 export interface TabelMonthlyData {
+  leaveLegend?: Record<string, string>
   calculationMode: 'STANDARD' | 'MCG'
   year: number
   month: number

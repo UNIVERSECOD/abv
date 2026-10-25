@@ -1,16 +1,19 @@
 package com.hic.service;
 
 import com.hic.model.LeaveRequest;
-import com.hic.model.LeaveType;
 import com.hic.model.Employee;
+import com.hic.model.LeaveType;
 import com.hic.dto.LeaveRequestDTO;
+import com.hic.util.TenantContext;
+import com.hic.util.AppTimeZone;
 import com.hic.exception.BadRequestException;
+import com.hic.exception.ResourceNotFoundException;
+import org.junit.jupiter.api.AfterEach;
 import com.hic.model.LeaveRequest.LeaveStatus;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.LeaveRequestRepository;
 import com.hic.repository.LeaveTypeRepository;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -21,7 +24,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,159 +39,107 @@ class LeaveServiceTest {
     private EmployeeRepository employeeRepository;
     @Mock
     private LeaveTypeRepository leaveTypeRepository;
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
 
     @InjectMocks
     private LeaveService leaveService;
 
     @AfterEach
-    void clearContext() {
-        com.hic.util.TenantContext.clear();
+    void clearTenant() { TenantContext.clear(); }
+
+    private LeaveRequestDTO payload() {
+        var dto = new LeaveRequestDTO();
+        dto.setEmployeeId(11L); dto.setLeaveTypeId(3L);
+        dto.setStartDate(LocalDate.of(2026, 10, 18)); dto.setEndDate(LocalDate.of(2026, 10, 20));
+        dto.setStatus(LeaveStatus.APPROVED);
+        return dto;
     }
 
-    private void useTenant() {
-        com.hic.util.TenantContext.setTenantId(1L);
-        com.hic.util.TenantContext.setUserId(2L);
-    }
-
-    private Employee employeeWithBalance(int balance) {
-        Employee employee = new Employee();
-        employee.setId(7L);
-        employee.setTenantId(1L);
-        employee.setAnnualLeaveBalance(balance);
-        when(employeeRepository.lockForTermination(1L, 7L)).thenReturn(Optional.of(employee));
-        return employee;
-    }
-
-    private LeaveType annualType() {
-        LeaveType type = new LeaveType();
-        type.setId(5L);
-        type.setTenantId(1L);
-        type.setLeaveCode("ANNUAL");
-        when(leaveTypeRepository.findById(5L)).thenReturn(Optional.of(type));
-        return type;
+    private void validReferences() {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        employee.setEmployeeId("HR-11"); employee.setFirstName("Test"); employee.setLastName("Person");
+        var type = new LeaveType(); type.setId(3L); type.setTenantId(7L); type.setLeaveName("İllik məzuniyyət");
+        when(employeeRepository.findByTenantIdAndId(7L, 11L)).thenReturn(Optional.of(employee));
+        when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(employee));
+        when(leaveTypeRepository.lockForLeave(7L, 3L)).thenReturn(Optional.of(type));
+        when(leaveTypeRepository.findByTenantId(7L)).thenReturn(List.of(type));
     }
 
     @Test
-    void approvedAnnualLeaveChargesBalanceExactlyOnce() {
-        useTenant();
-        Employee employee = employeeWithBalance(10);
-        annualType();
-        LocalDate start = LocalDate.of(2026, 11, 2);
-        LeaveRequestDTO input = new LeaveRequestDTO();
-        input.setEmployeeId(7L); input.setLeaveTypeId(5L);
-        input.setStartDate(start); input.setEndDate(start.plusDays(2));
-        input.setStatus(LeaveStatus.APPROVED);
-        input.setDeductFromLeaveBalance(true);
-        when(leaveRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-
-        LeaveRequestDTO saved = leaveService.create(input);
-
-        assertThat(saved.getBalanceChargedDays()).isEqualTo(3);
-        assertThat(saved.getDeductFromLeaveBalance()).isTrue();
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(7);
-        verify(employeeRepository).save(employee);
+    void createApprovedLeaveUsesTenantAndBakuApprovalDate() {
+        validReferences();
+        when(leaveRequestRepository.save(any())).thenAnswer(call -> {
+            LeaveRequest req = call.getArgument(0); req.setId(99L);
+            assertThat(req.getTenantId()).isEqualTo(7L);
+            return req;
+        });
+        var result = leaveService.create(payload());
+        assertThat(result.getStatus()).isEqualTo(LeaveStatus.APPROVED);
+        assertThat(result.getApprovalDate()).isEqualTo(AppTimeZone.today());
+        assertThat(result.getEmployeeCode()).isEqualTo("HR-11");
+        assertThat(result.getLeaveTypeName()).isEqualTo("İllik məzuniyyət");
     }
 
     @Test
-    void insufficientBalanceRejectsApprovalWithoutSaving() {
-        useTenant();
-        Employee employee = employeeWithBalance(1);
-        annualType();
-        LeaveRequestDTO input = new LeaveRequestDTO();
-        input.setEmployeeId(7L); input.setLeaveTypeId(5L);
-        input.setStartDate(LocalDate.of(2026, 11, 2)); input.setEndDate(LocalDate.of(2026, 11, 4));
-        input.setStatus(LeaveStatus.APPROVED);
-        input.setDeductFromLeaveBalance(true);
-
-        assertThatThrownBy(() -> leaveService.create(input)).isInstanceOf(BadRequestException.class);
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(1);
+    void createRejectsEmployeeFromAnotherTenant() {
+        TenantContext.setTenantId(7L);
+        assertThrows(BadRequestException.class, () -> leaveService.create(payload()));
         verify(leaveRequestRepository, never()).save(any());
     }
 
     @Test
-    void nonAnnualLeaveCanChargeBalanceWhenSelected() {
-        useTenant();
-        Employee employee = employeeWithBalance(10);
-        LeaveType type = annualType();
-        type.setLeaveCode("MEDICAL");
-        LeaveRequestDTO input = new LeaveRequestDTO();
-        input.setEmployeeId(7L); input.setLeaveTypeId(5L);
-        input.setStartDate(LocalDate.of(2026, 11, 2)); input.setEndDate(LocalDate.of(2026, 11, 3));
-        input.setStatus(LeaveStatus.APPROVED);
-        input.setDeductFromLeaveBalance(true);
-        when(leaveRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-
-        LeaveRequestDTO saved = leaveService.create(input);
-
-        assertThat(saved.getBalanceChargedDays()).isEqualTo(2);
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(8);
+    void createRejectsLeaveTypeFromAnotherTenant() {
+        TenantContext.setTenantId(7L);
+        when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(new Employee()));
+        assertThrows(BadRequestException.class, () -> leaveService.create(payload()));
+        verify(leaveRequestRepository, never()).save(any());
     }
 
     @Test
-    void annualLeaveDoesNotChargeWithoutExplicitSelection() {
-        useTenant();
-        Employee employee = employeeWithBalance(10);
-        annualType();
-        LeaveRequestDTO input = new LeaveRequestDTO();
-        input.setEmployeeId(7L); input.setLeaveTypeId(5L);
-        input.setStartDate(LocalDate.of(2026, 11, 2)); input.setEndDate(LocalDate.of(2026, 11, 3));
-        input.setStatus(LeaveStatus.APPROVED);
-        when(leaveRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-
-        LeaveRequestDTO saved = leaveService.create(input);
-
-        assertThat(saved.getDeductFromLeaveBalance()).isFalse();
-        assertThat(saved.getBalanceChargedDays()).isZero();
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(10);
-        verify(employeeRepository, never()).save(any());
+    void createRejectsInclusiveOverlapAndInvalidDates() {
+        validReferences();
+        var existing = new LeaveRequest(); existing.setId(9L); existing.setLeaveTypeId(3L); existing.setStatus(LeaveStatus.APPROVED);
+        existing.setStartDate(LocalDate.of(2026, 10, 20)); existing.setEndDate(LocalDate.of(2026, 10, 22));
+        when(leaveRequestRepository.findByTenantIdAndEmployeeId(7L, 11L)).thenReturn(List.of(existing));
+        assertThrows(BadRequestException.class, () -> leaveService.create(payload()));
+        var invalid = payload(); invalid.setEndDate(invalid.getStartDate().minusDays(1));
+        assertThrows(BadRequestException.class, () -> leaveService.create(invalid));
+        verify(leaveRequestRepository, never()).save(any());
     }
 
     @Test
-    void pendingLeaveChargesOnApprovalButNotOnRepeatedApproval() {
-        useTenant();
-        Employee employee = employeeWithBalance(10);
-        annualType();
-        LeaveRequestDTO input = new LeaveRequestDTO();
-        input.setEmployeeId(7L); input.setLeaveTypeId(5L);
-        input.setStartDate(LocalDate.of(2026, 11, 2)); input.setEndDate(LocalDate.of(2026, 11, 3));
-        input.setStatus(LeaveStatus.PENDING);
-        input.setDeductFromLeaveBalance(true);
-        when(leaveRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-
-        LeaveRequestDTO created = leaveService.create(input);
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(10);
-        assertThat(created.getBalanceChargedDays()).isZero();
-
-        LeaveRequest stored = new LeaveRequest();
-        stored.setId(9L); stored.setTenantId(1L); stored.setEmployeeId(7L);
-        stored.setLeaveTypeId(5L); stored.setStartDate(input.getStartDate()); stored.setEndDate(input.getEndDate());
-        stored.setStatus(LeaveStatus.PENDING); stored.setDeductFromLeaveBalance(true);
-        when(leaveRequestRepository.findById(9L)).thenReturn(Optional.of(stored));
-
-        leaveService.updateStatus(9L, LeaveStatus.APPROVED, null);
-        leaveService.updateStatus(9L, LeaveStatus.APPROVED, null);
-
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(8);
-        assertThat(stored.getBalanceChargedDays()).isEqualTo(2);
+    void statusUpdateCannotReachAnotherTenant() {
+        TenantContext.setTenantId(7L);
+        assertThrows(ResourceNotFoundException.class, () -> leaveService.updateStatus(8L, LeaveStatus.APPROVED, null));
+        verify(leaveRequestRepository, never()).save(any());
     }
 
     @Test
-    void rejectingChargedLeaveRefundsButLegacyApprovedLeaveDoesNot() {
-        useTenant();
-        Employee employee = employeeWithBalance(7);
-        LeaveRequest leave = new LeaveRequest();
-        leave.setId(9L); leave.setTenantId(1L); leave.setEmployeeId(7L);
-        leave.setStatus(LeaveStatus.APPROVED); leave.setBalanceChargedDays(3);
-        when(leaveRequestRepository.findById(9L)).thenReturn(Optional.of(leave));
-        when(leaveRequestRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    void exactDuplicateOfCancelledLeaveMustBeEditedRatherThanInsertedAgain() {
+        validReferences();
+        var existing = new LeaveRequest(); existing.setId(9L); existing.setLeaveTypeId(3L);
+        existing.setStatus(LeaveStatus.REJECTED); existing.setStartDate(payload().getStartDate());
+        existing.setEndDate(payload().getEndDate());
+        when(leaveRequestRepository.findByTenantIdAndEmployeeId(7L, 11L)).thenReturn(List.of(existing));
+        var duplicate = payload(); duplicate.setStatus(LeaveStatus.REJECTED);
+        assertThrows(BadRequestException.class, () -> leaveService.create(duplicate));
+        verify(leaveRequestRepository, never()).save(any());
+    }
 
-        leaveService.updateStatus(9L, LeaveStatus.REJECTED, null);
-
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(10);
-        assertThat(leave.getBalanceChargedDays()).isZero();
-        leave.setStatus(LeaveStatus.APPROVED); // pre-existing approved row, never charged
-        leaveService.updateStatus(9L, LeaveStatus.REJECTED, null);
-        assertThat(employee.getAnnualLeaveBalance()).isEqualTo(10);
+    @Test
+    void rejectedLeaveCanBeCancelledWithoutDeletingHistory() {
+        TenantContext.setTenantId(7L);
+        var existing = new LeaveRequest(); existing.setId(8L); existing.setTenantId(7L);
+        existing.setEmployeeId(11L); existing.setLeaveTypeId(3L); existing.setStatus(LeaveStatus.APPROVED);
+        when(leaveRequestRepository.lockInTenant(8L, 7L)).thenReturn(Optional.of(existing));
+        when(employeeRepository.lockForLeave(7L, 11L)).thenReturn(Optional.of(new Employee()));
+        when(leaveRequestRepository.save(any())).thenAnswer(call -> call.getArgument(0));
+        var result = leaveService.updateStatus(8L, LeaveStatus.REJECTED, 999L);
+        assertThat(result.getStatus()).isEqualTo(LeaveStatus.REJECTED);
+        assertThat(result.getApprovedBy()).isNull();
+        verify(leaveRequestRepository, never()).deleteById(any());
     }
 
     @Test

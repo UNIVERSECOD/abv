@@ -37,6 +37,9 @@ foreach ($script in @('Runtime.ps1','Manage.ps1','Start-Component.ps1','Open-Att
 }
 Copy-Item "$repo\scripts\backup-attendra.ps1" "$stage\scripts"
 Copy-Item "$repo\scripts\backup-folder-picker.ps1" "$stage\scripts"
+foreach ($script in @('backup-worker.ps1', 'backup-operations.ps1', 'install-backup-worker.ps1')) {
+    Copy-Item "$repo\scripts\$script" "$stage\scripts"
+}
 Copy-Item "$PSScriptRoot\THIRD_PARTY.md" "$stage\licenses"
 Copy-Item "$DependenciesDirectory\WinSW-LICENSE.txt" "$stage\licenses"
 & "$JavaHome\bin\jlink.exe" --add-modules ALL-MODULE-PATH --strip-debug --no-header-files --no-man-pages --output "$stage\java"

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import { employeeApi } from '../api/employeeApi.ts'
 import { permissionApi } from '../api/permissionApi.ts'
@@ -7,7 +7,8 @@ import { Employee, EmployeePermission, PermissionType } from '../types'
 import { statusLabel } from '../i18n/labels.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { toast } from '../store/toastStore.ts'
-import LeaveManagement from '../components/LeaveManagement.tsx'
+import SortableHeader from '../components/SortableHeader.tsx'
+import { sortTableRows, TableSort } from '../utils/tableSort.ts'
 
 type PermissionFormValue = {
   employeeIds: number[]
@@ -238,7 +239,8 @@ function permissionStatusStyle(status: EmployeePermission['status']) {
   }
 }
 
-export default function PermissionAssignmentPage() {
+export default function PermissionAssignmentPage({ embedded = false }: { embedded?: boolean }) {
+  const Wrapper = embedded ? Fragment : Layout
   const [employees, setEmployees] = useState<Employee[]>([])
   const [permissionTypes, setPermissionTypes] = useState<PermissionType[]>([])
   const [permissions, setPermissions] = useState<EmployeePermission[]>([])
@@ -246,11 +248,11 @@ export default function PermissionAssignmentPage() {
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ACTIVE')
   const [dateFilter, setDateFilter] = useState('')
+  const [sort, setSort] = useState<TableSort | null>(null)
   const [editingPermission, setEditingPermission] = useState<EmployeePermission | undefined>()
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'permissions' | 'leaves'>('permissions')
 
   const fetchData = async () => {
     setLoading(true)
@@ -294,8 +296,25 @@ export default function PermissionAssignmentPage() {
         const text = `${employee?.employeeId ?? ''} ${employee?.firstName ?? ''} ${employee?.lastName ?? ''} ${employee?.finNumber ?? ''} ${employee?.departmentName ?? ''} ${permission.reason ?? ''}`
         return text.toLocaleLowerCase('az').includes(query)
       })
-      .sort((left, right) => right.startDate.localeCompare(left.startDate) || right.id - left.id)
   }, [dateFilter, employeeMap, permissions, search, statusFilter, typeFilter])
+
+  const numberedPermissions = useMemo(() => sortTableRows(filteredPermissions, null, () => null), [filteredPermissions])
+  const numberById = useMemo(() => new Map(numberedPermissions.map((permission, index) => [permission.id, index + 1])), [numberedPermissions])
+  const sortedPermissions = useMemo(() => sortTableRows(filteredPermissions, sort, (permission, key) => {
+    const employee = employeeMap.get(permission.employeeId)
+    switch (key) {
+      case 'no': return numberById.get(permission.id)
+      case 'employee': return employee ? `${employee.firstName} ${employee.lastName}` : null
+      case 'type': return typeMap.get(permission.permissionTypeId)?.name
+      case 'date': return permission.startDate + ' ' + permission.endDate
+      case 'time': return permission.startTime && permission.endTime ? inputTime(permission.startTime) + ' ' + inputTime(permission.endTime) : null
+      case 'effect': return permission.deductFromWorkHours ? 'İş vaxtından çıxılır' : 'İş vaxtına daxildir'
+      case 'status': return statusLabel(permission.status)
+      case 'reason': return permission.reason || null
+      default: return null
+    }
+  }), [employeeMap, filteredPermissions, numberById, sort, typeMap])
+  const toggleSort = (key: string) => setSort(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }))
 
   const savePermission = async (payload: PermissionFormValue) => {
     if (editingPermission) {
@@ -310,6 +329,7 @@ export default function PermissionAssignmentPage() {
       })
     } else {
       await employeePermissionApi.bulkGrant(payload)
+      setSort(null)
     }
     await fetchData()
     toast.success(editingPermission ? 'İcazə yeniləndi' : 'İcazə əlavə edildi')
@@ -341,22 +361,15 @@ export default function PermissionAssignmentPage() {
   }
 
   return (
-    <Layout>
+    <Wrapper>
       <div className="space-y-5 p-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">İcazələr və məzuniyyət</h1>
-            <p className="mt-1 text-sm text-slate-500">Əməkdaşların icazə və məzuniyyət qeydlərini idarə edin</p>
+            <h1 className="text-2xl font-bold text-slate-900">İcazələr</h1>
+            <p className="mt-1 text-sm text-slate-500">Əməkdaşların saatlıq və tam günlük icazələrini idarə edin</p>
           </div>
-          {activeTab === 'permissions' && <button type="button" onClick={openCreate} disabled={permissionTypes.length === 0} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50">+ Yeni icazə</button>}
+          <button type="button" onClick={openCreate} disabled={permissionTypes.length === 0} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50">+ Yeni icazə</button>
         </div>
-
-        <div className="flex gap-2 border-b border-slate-200">
-          <button type="button" onClick={() => setActiveTab('permissions')} className={`px-4 py-2 text-sm font-medium ${activeTab === 'permissions' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-slate-600'}`}>İcazələr</button>
-          <button type="button" onClick={() => setActiveTab('leaves')} className={`px-4 py-2 text-sm font-medium ${activeTab === 'leaves' ? 'border-b-2 border-emerald-600 text-emerald-700' : 'text-slate-600'}`}>Məzuniyyət</button>
-        </div>
-
-        {activeTab === 'leaves' ? <LeaveManagement employees={employees} onChanged={fetchData} /> : <>
 
         {error && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loading && permissionTypes.length === 0 && <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">İcazə növü yaradılmayıb.</div>}
@@ -377,29 +390,29 @@ export default function PermissionAssignmentPage() {
           <input type="date" value={dateFilter} onChange={event => setDateFilter(event.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </div>
 
+        {sort && <button type="button" onClick={() => setSort(null)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50">Ən yenilər</button>}
+
         <div className="overflow-x-auto border-y border-slate-200 bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-3">Əməkdaş</th>
-                <th className="px-4 py-3">İcazə növü</th>
-                <th className="px-4 py-3">Tarix</th>
-                <th className="px-4 py-3">Saat</th>
-                <th className="px-4 py-3">İş vaxtına təsir</th>
-                <th className="px-4 py-3">Vəziyyət</th>
-                <th className="px-4 py-3">Səbəb</th>
+                {[
+                  ['no', 'No'], ['employee', 'Əməkdaş'], ['type', 'İcazə növü'], ['date', 'Tarix'],
+                  ['time', 'Saat'], ['effect', 'İş vaxtına təsir'], ['status', 'Vəziyyət'], ['reason', 'Səbəb'],
+                ].map(([key, label]) => <SortableHeader key={key} columnKey={key} label={label} sort={sort} onSort={toggleSort} className="px-4 py-3" />)}
                 <th className="px-4 py-3 text-right">Əməliyyat</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">Yüklənir...</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">Yüklənir...</td></tr>
               ) : filteredPermissions.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">Seçilmiş filtrə uyğun icazə yoxdur</td></tr>
-              ) : filteredPermissions.map(permission => {
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">Seçilmiş filtrə uyğun icazə yoxdur</td></tr>
+              ) : sortedPermissions.map(permission => {
                 const employee = employeeMap.get(permission.employeeId)
                 return (
                   <tr key={permission.id} className="text-slate-700">
+                    <td className="px-4 py-3">{numberById.get(permission.id)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="font-medium text-slate-900">{employee ? `${employee.firstName} ${employee.lastName}` : `#${permission.employeeId}`}</div>
                       <div className="text-xs text-slate-500">{employee?.employeeId ?? '—'} · {employee?.departmentName ?? 'Departament yoxdur'}</div>
@@ -420,10 +433,9 @@ export default function PermissionAssignmentPage() {
             </tbody>
           </table>
         </div>
-        </>}
       </div>
 
       {showModal && <PermissionModal employees={employees.filter(employee => employee.employmentStatus === 'ACTIVE' || employee.id === editingPermission?.employeeId)} permissionTypes={permissionTypes} initial={editingPermission} onClose={() => setShowModal(false)} onSave={savePermission} />}
-    </Layout>
+    </Wrapper>
   )
 }

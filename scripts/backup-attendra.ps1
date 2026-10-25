@@ -184,7 +184,9 @@ function Wait-AttendraContainers {
     throw 'Docker konteynerləri 10 dəqiqə ərzində hazır olmadı.'
 }
 
+$hostBackupLock = $null
 try {
+    $hostBackupLock = [IO.File]::Open((Join-Path $runtimeDirectory 'backup-host.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
     if (-not (Test-Path -LiteralPath $settingsFile -PathType Leaf)) {
         throw 'Backup parametrləri tapılmadı. Əvvəl proqramın Backup bölməsində qovluğu yadda saxlayın.'
     }
@@ -345,4 +347,6 @@ try {
         -LastBackupBytes ([long]$previousStatus.lastBackupBytes) `
         -TotalBackupBytes ([long]$previousStatus.totalBackupBytes)
     throw
+} finally {
+    if ($hostBackupLock) { $hostBackupLock.Dispose() }
 }

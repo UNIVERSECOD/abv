@@ -16,6 +16,7 @@ function renderReport(view, start, end) {
     }).outputText
     vm.runInNewContext(code, { exports, require: name => {
       if (name === 'react' || name === 'react/jsx-runtime') return require(name)
+      if (name === 'react-router-dom') return { useSearchParams: () => [new URLSearchParams()] }
       if (name.includes('/components/Layout')) return { default: ({ children }) => children }
       if (name.includes('/store/attendanceReportStore')) return {
         reportDateError: () => null,

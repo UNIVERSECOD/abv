@@ -7,6 +7,8 @@ import { Employee, EmployeePermission, PermissionType } from '../types'
 import { statusLabel } from '../i18n/labels.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { toast } from '../store/toastStore.ts'
+import SortableHeader from '../components/SortableHeader.tsx'
+import { sortTableRows, TableSort } from '../utils/tableSort.ts'
 
 type PermissionFormValue = {
   employeeIds: number[]
@@ -241,6 +243,7 @@ export default function PermissionAssignmentPage({ embedded = false }: { embedde
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState('ACTIVE')
   const [dateFilter, setDateFilter] = useState('')
+  const [sort, setSort] = useState<TableSort | null>(null)
   const [editingPermission, setEditingPermission] = useState<EmployeePermission | undefined>()
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -288,8 +291,25 @@ export default function PermissionAssignmentPage({ embedded = false }: { embedde
         const text = `${employee?.employeeId ?? ''} ${employee?.firstName ?? ''} ${employee?.lastName ?? ''} ${employee?.finNumber ?? ''} ${employee?.departmentName ?? ''} ${permission.reason ?? ''}`
         return text.toLocaleLowerCase('az').includes(query)
       })
-      .sort((left, right) => right.startDate.localeCompare(left.startDate) || right.id - left.id)
   }, [dateFilter, employeeMap, permissions, search, statusFilter, typeFilter])
+
+  const numberedPermissions = useMemo(() => sortTableRows(filteredPermissions, null, () => null), [filteredPermissions])
+  const numberById = useMemo(() => new Map(numberedPermissions.map((permission, index) => [permission.id, index + 1])), [numberedPermissions])
+  const sortedPermissions = useMemo(() => sortTableRows(filteredPermissions, sort, (permission, key) => {
+    const employee = employeeMap.get(permission.employeeId)
+    switch (key) {
+      case 'no': return numberById.get(permission.id)
+      case 'employee': return employee ? `${employee.firstName} ${employee.lastName}` : null
+      case 'type': return typeMap.get(permission.permissionTypeId)?.name
+      case 'date': return permission.startDate + ' ' + permission.endDate
+      case 'time': return permission.startTime && permission.endTime ? inputTime(permission.startTime) + ' ' + inputTime(permission.endTime) : null
+      case 'effect': return permission.deductFromWorkHours ? 'İş vaxtından çıxılır' : 'İş vaxtına daxildir'
+      case 'status': return statusLabel(permission.status)
+      case 'reason': return permission.reason || null
+      default: return null
+    }
+  }), [employeeMap, filteredPermissions, numberById, sort, typeMap])
+  const toggleSort = (key: string) => setSort(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }))
 
   const savePermission = async (payload: PermissionFormValue) => {
     if (editingPermission) {
@@ -304,6 +324,7 @@ export default function PermissionAssignmentPage({ embedded = false }: { embedde
       })
     } else {
       await employeePermissionApi.bulkGrant(payload)
+      setSort(null)
     }
     await fetchData()
     toast.success(editingPermission ? 'İcazə yeniləndi' : 'İcazə əlavə edildi')
@@ -364,29 +385,29 @@ export default function PermissionAssignmentPage({ embedded = false }: { embedde
           <input type="date" value={dateFilter} onChange={event => setDateFilter(event.target.value)} className="rounded-md border border-slate-300 px-3 py-2 text-sm" />
         </div>
 
+        {sort && <button type="button" onClick={() => setSort(null)} className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50">Ən yenilər</button>}
+
         <div className="overflow-x-auto border-y border-slate-200 bg-white">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
-                <th className="px-4 py-3">Əməkdaş</th>
-                <th className="px-4 py-3">İcazə növü</th>
-                <th className="px-4 py-3">Tarix</th>
-                <th className="px-4 py-3">Saat</th>
-                <th className="px-4 py-3">İş vaxtına təsir</th>
-                <th className="px-4 py-3">Vəziyyət</th>
-                <th className="px-4 py-3">Səbəb</th>
+                {[
+                  ['no', 'No'], ['employee', 'Əməkdaş'], ['type', 'İcazə növü'], ['date', 'Tarix'],
+                  ['time', 'Saat'], ['effect', 'İş vaxtına təsir'], ['status', 'Vəziyyət'], ['reason', 'Səbəb'],
+                ].map(([key, label]) => <SortableHeader key={key} columnKey={key} label={label} sort={sort} onSort={toggleSort} className="px-4 py-3" />)}
                 <th className="px-4 py-3 text-right">Əməliyyat</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">Yüklənir...</td></tr>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">Yüklənir...</td></tr>
               ) : filteredPermissions.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">Seçilmiş filtrə uyğun icazə yoxdur</td></tr>
-              ) : filteredPermissions.map(permission => {
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">Seçilmiş filtrə uyğun icazə yoxdur</td></tr>
+              ) : sortedPermissions.map(permission => {
                 const employee = employeeMap.get(permission.employeeId)
                 return (
                   <tr key={permission.id} className="text-slate-700">
+                    <td className="px-4 py-3">{numberById.get(permission.id)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="font-medium text-slate-900">{employee ? `${employee.firstName} ${employee.lastName}` : `#${permission.employeeId}`}</div>
                       <div className="text-xs text-slate-500">{employee?.employeeId ?? '—'} · {employee?.departmentName ?? 'Departament yoxdur'}</div>

@@ -35,6 +35,7 @@ export interface LeaveType {
 export type LeaveTypePayload = Pick<LeaveType, 'leaveName' | 'shortName' | 'deductFromBalance'>
 export interface LeaveRequest {
   id: number
+  createdAt?: string
   employeeId: number
   employeeCode?: string
   employeeName?: string

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import SortableHeader from '../components/SortableHeader.tsx'
+import { sortTableRows, TableSort } from '../utils/tableSort.ts'
 import LeaveEmployeeSelect from '../components/LeaveEmployeeSelect.tsx'
 import { leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes, leaveCalendarDays } from '../utils/leaveFilters.ts'
 import LeaveTypesPanel from '../components/LeaveTypesPanel.tsx'
@@ -185,6 +187,7 @@ function LeavesPanel() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
+  const [sort, setSort] = useState<TableSort | null>(null)
   const [month, setMonth] = useState('')
   const [from, setFrom] = useState('')
   const [through, setThrough] = useState('')
@@ -231,14 +234,45 @@ function LeavesPanel() {
             `${l.employeeName} ${l.employeeCode} ${l.finNumber} ${l.leaveTypeName}`
               .toLocaleLowerCase('az')
               .includes(search.toLocaleLowerCase('az')),
-        )
-        .sort((a, b) => b.startDate.localeCompare(a.startDate) || b.id - a.id),
+        ),
     [leaves, status, from, through, search],
   )
 
   const employeeById = useMemo(() => new Map(employees.map(employee => [employee.id, employee])), [employees])
   const balanceByEmployee = useMemo(() => new Map(balances.map(balance => [balance.employeeId, balance])), [balances])
   const visibleTypes = visibleLeaveTypes(types, leaves)
+  const defaultRows = useMemo(() => sortTableRows(filtered, null, () => null), [filtered])
+  const numberById = useMemo(() => new Map(defaultRows.map((leave, index) => [leave.id, index + 1])), [defaultRows])
+  const chargedDays = (leave: LeaveRequest) => {
+    const balance = balanceByEmployee.get(leave.employeeId)
+    const type = types.find(item => item.id === leave.leaveTypeId)
+    const start = balance?.startDate && balance.startDate > leave.startDate ? balance.startDate : leave.startDate
+    return leave.status === 'APPROVED' && type?.deductFromBalance ? leaveCalendarDays(start, leave.endDate) : 0
+  }
+  const columns = [
+    { key: 'no', label: 'No' }, { key: 'employee', label: 'Əməkdaş' }, { key: 'fin', label: 'FIN' },
+    { key: 'start', label: 'Başlanğıc' }, { key: 'end', label: 'Bitmə' }, { key: 'status', label: 'Vəziyyət' },
+    { key: 'balanceStart', label: 'Balansın başlanğıcı' }, { key: 'opening', label: 'Başlanğıc qalığı' },
+    ...visibleTypes.map(type => ({ key: 'type:' + type.id, label: type.leaveName })),
+    { key: 'charged', label: 'Balansdan çıxılan' }, { key: 'remaining', label: 'Qalan' },
+  ]
+  const sortedRows = sortTableRows(filtered, sort, (leave, key) => {
+    const balance = balanceByEmployee.get(leave.employeeId)
+    switch (key) {
+      case 'no': return numberById.get(leave.id)
+      case 'employee': return leave.employeeName
+      case 'fin': return leave.finNumber || employeeById.get(leave.employeeId)?.finNumber
+      case 'start': return leave.startDate
+      case 'end': return leave.endDate
+      case 'status': return statusLabels[leave.status]
+      case 'balanceStart': return balance?.startDate
+      case 'opening': return balance?.openingDays
+      case 'charged': return chargedDays(leave)
+      case 'remaining': return balance?.remainingDays
+      default: return key === 'type:' + leave.leaveTypeId ? leaveCalendarDays(leave.startDate, leave.endDate) : null
+    }
+  })
+  const changeSort = (key: string) => setSort(previous => ({ key, direction: previous?.key === key && previous.direction === 'asc' ? 'desc' : 'asc' }))
   const periodError = from && through && from > through ? 'Bitmə tarixi başlanğıcdan əvvəl ola bilməz' : ''
 
   const download = async (template: boolean) => {
@@ -266,6 +300,7 @@ function LeavesPanel() {
       const result = res.data.data
       setImportErrors(result.errors)
       if (result.successful) {
+        setSort(null)
         toast.success('Import tamamlandı', `${result.importedRows} məzuniyyət əlavə edildi`)
         await load()
       } else toast.error('Import edilmədi', 'Sətir xətalarını düzəldin. Heç bir məlumat yazılmadı.')
@@ -380,24 +415,24 @@ function LeavesPanel() {
         <button className={buttonClass + ' self-end'} onClick={() => { setMonth(''); setFrom(''); setThrough(''); setStatus('ALL'); setSearch('') }}>Filtrləri təmizlə</button>
       </div>
 
+      {sort && <button className={buttonClass} onClick={() => setSort(null)}>Ən yenilər</button>}
       <p className="text-sm text-slate-500">{filtered.length} məzuniyyət · Hər məzuniyyət ayrıca sətirdədir. Növ sütununda həmin məzuniyyətin təqvim günləri göstərilir. Qalan balans əməkdaşın ümumi qalığıdır.</p>
       <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-500"><tr>
-            {['Əməkdaş', 'FIN', 'Başlanğıc', 'Bitmə', 'Vəziyyət', 'Balansın başlanğıcı', 'Başlanğıc qalığı', ...visibleTypes.map(type => type.leaveName), 'Balansdan çıxılan', 'Qalan', 'Əməliyyat'].map((heading, index) =>
-              <th key={index} className="whitespace-nowrap px-4 py-3">{heading}</th>)}
+            {columns.map(column => <SortableHeader key={column.key} columnKey={column.key} label={column.label} sort={sort} onSort={changeSort} />)}
+            <th className="whitespace-nowrap px-4 py-3">Əməliyyat</th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? <tr><td colSpan={visibleTypes.length + 10} className="p-8 text-center">Yüklənir...</td></tr>
-              : !filtered.length ? <tr><td colSpan={visibleTypes.length + 10} className="p-8 text-center text-slate-500">Məzuniyyət tapılmadı</td></tr>
-              : filtered.map(leave => {
+            {loading ? <tr><td colSpan={columns.length + 1} className="p-8 text-center">Yüklənir...</td></tr>
+              : !filtered.length ? <tr><td colSpan={columns.length + 1} className="p-8 text-center text-slate-500">Məzuniyyət tapılmadı</td></tr>
+              : sortedRows.map(leave => {
                 const employee = employeeById.get(leave.employeeId)
                 const balance = balanceByEmployee.get(leave.employeeId)
-                const type = types.find(item => item.id === leave.leaveTypeId)
                 const days = leaveCalendarDays(leave.startDate, leave.endDate)
-                const debitStart = balance?.startDate && balance.startDate > leave.startDate ? balance.startDate : leave.startDate
-                const charged = leave.status === 'APPROVED' && type?.deductFromBalance ? leaveCalendarDays(debitStart, leave.endDate) : 0
+                const charged = chargedDays(leave)
                 return <tr key={leave.id}>
+                  <td className="px-4 py-3 text-slate-500">{numberById.get(leave.id)}</td>
                   <td className="whitespace-nowrap px-4 py-3"><div className="font-medium">{leave.employeeName}</div><div className="text-xs text-slate-500">{leave.employeeCode}</div></td>
                   <td className="px-4 py-3">{leave.finNumber || employee?.finNumber || '—'}</td>
                   <td className="whitespace-nowrap px-4 py-3">{leave.startDate}</td>
@@ -423,7 +458,7 @@ function LeavesPanel() {
           onClose={() => setModal(null)}
           onSave={async (payload) => {
             if (modal.initial) await leaveApi.update(modal.initial.id, payload)
-            else await leaveApi.create(payload)
+            else { await leaveApi.create(payload); setSort(null) }
             await load()
             toast.success('Məzuniyyət yadda saxlanıldı')
           }}

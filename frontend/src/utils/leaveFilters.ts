@@ -3,6 +3,10 @@ export function leaveOverlapsPeriod(startDate: string, endDate: string, from: st
   return (!from || endDate >= from) && (!through || startDate <= through)
 }
 
+export function leaveCalendarDays(startDate: string, endDate: string) {
+  return Math.max(0, Math.round((Date.parse(endDate) - Date.parse(startDate)) / 86400000) + 1)
+}
+
 export function leaveMonthRange(month: string) {
   if (!month) return { from: '', through: '' }
   const [year, number] = month.split('-').map(Number)

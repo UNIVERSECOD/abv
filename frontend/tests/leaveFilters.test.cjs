@@ -8,7 +8,14 @@ const exportsObject = {}
 vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname, '../src/utils/leaveFilters.ts'), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS },
 }).outputText, { exports: exportsObject })
-const { leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes } = exportsObject
+const { leaveMonthRange, leaveOverlapsPeriod, visibleLeaveTypes, leaveCalendarDays } = exportsObject
+
+test('each leave row counts its own inclusive calendar days across month boundaries', () => {
+  assert.equal(leaveCalendarDays('2026-10-25', '2026-10-28'), 4)
+  assert.equal(leaveCalendarDays('2024-02-28', '2024-03-01'), 3)
+  assert.equal(leaveCalendarDays('2026-10-25', '2026-10-25'), 1)
+  assert.equal(leaveCalendarDays('2026-10-25', '2026-10-24'), 0)
+})
 
 test('month covers leap February and December without timezone drift', () => {
   assert.equal(leaveMonthRange('2024-02').through, '2024-02-29')

@@ -59,6 +59,8 @@ class TabelServiceTest {
     private AttendanceScheduleResolver attendanceScheduleResolver;
     @Mock
     private McgTabelProjectionService mcgProjectionService;
+    @Mock
+    private com.hic.repository.LeaveTypeRepository leaveTypeRepository;
 
     @InjectMocks
     private TabelService tabelService;

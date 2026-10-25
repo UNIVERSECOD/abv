@@ -65,6 +65,18 @@ class LeaveBalanceLimitTest {
         assertThat(service.create(dto(5)).getStatus()).isEqualTo(LeaveStatus.APPROVED);
     }
 
+    @Test void customTypeDeductsFromTheSameBalanceAsAnnual() {
+        var custom = new LeaveType(); custom.setId(3L); custom.setLeaveCode("CUSTOM_TEST");
+        custom.setShortName("TƏ"); custom.setDeductFromBalance(true);
+        var annual = new LeaveType(); annual.setId(1L); annual.setLeaveCode("ANNUAL");
+        when(types.findByTenantId(7L)).thenReturn(List.of(custom, annual));
+        when(requests.findByTenantIdAndEmployeeId(7L, 11L)).thenReturn(List.of(existing(3)));
+        var payload = dto(3); payload.setLeaveTypeId(3L);
+        assertThatThrownBy(() -> service.create(payload)).isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Qalıq: 2 gün");
+        verify(requests, never()).save(any());
+    }
+
     @Test void subtractsAlreadyApprovedUsageAndIgnoresPendingUnpaid() {
         var approved = existing(3);
         when(requests.findByTenantIdAndEmployeeId(7L, 11L)).thenReturn(List.of(approved));

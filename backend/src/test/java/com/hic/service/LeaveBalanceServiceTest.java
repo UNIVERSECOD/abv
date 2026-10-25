@@ -107,6 +107,29 @@ class LeaveBalanceServiceTest {
         verify(requests).findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED);
     }
 
+    @Test void everyCustomTypeIsTrackedAndDebitTypesShareRemainingBalance() {
+        var employees = mock(EmployeeRepository.class);
+        var requests = mock(LeaveRequestRepository.class);
+        var types = mock(LeaveTypeRepository.class);
+        var charged = new LeaveType(); charged.setId(1L); charged.setShortName("TƏ");
+        charged.setLeaveName("Təhsil"); charged.setDeductFromBalance(true);
+        var free = new LeaveType(); free.setId(2L); free.setShortName("X"); free.setLeaveName("Xüsusi");
+        var usedFree = leave("2026-10-22", "2026-10-24"); usedFree.setLeaveTypeId(2L);
+        when(employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(3L)).thenReturn(List.of(employee()));
+        when(types.findByTenantId(3L)).thenReturn(List.of(charged, free));
+        when(requests.findByTenantIdAndStatus(3L, LeaveRequest.LeaveStatus.APPROVED))
+                .thenReturn(List.of(leave("2026-10-19", "2026-10-20"), usedFree));
+        TenantContext.setTenantId(3L);
+        try {
+            var usage = new LeaveBalanceService(employees, requests, types).getUsage(7L);
+            assertEquals(2, usage.get(0).usedDays());
+            assertEquals(18, usage.get(0).remainingDays());
+            assertEquals(3, usage.get(1).usedDays());
+            assertNull(usage.get(1).remainingDays());
+            assertTrue(new LeaveBalanceService(employees, requests, types).getUsage(999L).isEmpty());
+        } finally { TenantContext.clear(); }
+    }
+
     @Test void unpaidAccumulatesWithoutDebitingAndCancellationRemovesItsDays() {
         var paid = leave("2026-11-01", "2026-11-05");
         var unpaid = leave("2026-11-10", "2026-11-12");

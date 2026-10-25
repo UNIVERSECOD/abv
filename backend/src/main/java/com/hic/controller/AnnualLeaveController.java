@@ -19,6 +19,11 @@ public class AnnualLeaveController {
     private final AnnualLeaveService annualLeaveService;
     private final com.hic.service.LeaveBalanceService leaveBalanceService;
 
+    @GetMapping("/usage")
+    public ApiResponse<List<com.hic.service.LeaveBalanceService.TypeUsage>> usage(@RequestParam(required = false) Long employeeId) {
+        return ApiResponse.success(leaveBalanceService.getUsage(employeeId));
+    }
+
     @GetMapping("/balances")
     public ResponseEntity<ApiResponse<List<com.hic.service.LeaveBalanceService.Balance>>> balances() {
         return ResponseEntity.ok(ApiResponse.success("Məzuniyyət balansları", leaveBalanceService.getAll()));

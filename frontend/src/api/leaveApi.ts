@@ -3,6 +3,17 @@ import { ApiResponse } from '../types'
 import { DataImportResult } from './dataTransferApi.ts'
 
 export type LeaveStatus = 'APPROVED' | 'PENDING' | 'REJECTED'
+export interface LeaveTypeUsage {
+  employeeId: number
+  employeeCode: string
+  employeeName: string
+  leaveTypeId: number
+  leaveTypeName: string
+  shortName: string
+  deductFromBalance: boolean
+  usedDays: number
+  remainingDays: number | null
+}
 export interface LeaveBalance {
   employeeId: number
   employeeCode: string
@@ -17,7 +28,11 @@ export interface LeaveType {
   id: number
   leaveName: string
   leaveCode: string
+  shortName: string
+  deductFromBalance: boolean
+  archived: boolean
 }
+export type LeaveTypePayload = Pick<LeaveType, 'leaveName' | 'shortName' | 'deductFromBalance'>
 export interface LeaveRequest {
   id: number
   employeeId: number
@@ -33,9 +48,13 @@ export interface LeaveRequest {
 export type LeavePayload = Pick<LeaveRequest, 'employeeId' | 'leaveTypeId' | 'startDate' | 'endDate' | 'status'>
 
 export const leaveApi = {
+  getUsage: (employeeId?: number) => client.get<ApiResponse<LeaveTypeUsage[]>>('/annual-leave/usage', { params: { employeeId } }),
   getBalances: () => client.get<ApiResponse<LeaveBalance[]>>('/annual-leave/balances'),
   getAll: () => client.get<ApiResponse<LeaveRequest[]>>('/leaves'),
   getTypes: () => client.get<ApiResponse<LeaveType[]>>('/leaves/types'),
+  createType: (data: LeaveTypePayload) => client.post('/leaves/types', data),
+  updateType: (id: number, data: LeaveTypePayload) => client.put(`/leaves/types/${id}`, data),
+  deleteType: (id: number) => client.delete(`/leaves/types/${id}`),
   create: (data: LeavePayload) => client.post<ApiResponse<LeaveRequest>>('/leaves', data),
   update: (id: number, data: LeavePayload) => client.put<ApiResponse<LeaveRequest>>(`/leaves/${id}`, data),
   setStatus: (id: number, status: LeaveStatus) => client.put(`/leaves/${id}/status`, null, { params: { status } }),

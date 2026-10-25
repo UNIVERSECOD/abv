@@ -23,7 +23,21 @@ public class LeaveType {
     @Column(name = "leave_name", nullable = false)
     private String leaveName;
 
+    @Column(name = "short_name", length = 3)
+    private String shortName;
+
+    @Column(name = "deduct_from_balance", nullable = false)
+    private boolean deductFromBalance;
+
+    @Column(nullable = false)
+    private boolean archived;
+
+    public boolean debitsBalance() {
+        return shortName == null ? "ANNUAL".equalsIgnoreCase(leaveCode) : deductFromBalance;
+    }
+
     public String displayName() {
+        if (shortName != null) return leaveName;
         if ("ANNUAL".equalsIgnoreCase(leaveCode)) return "Ödənişli məzuniyyət";
         if ("UNPAID".equalsIgnoreCase(leaveCode)) return "Ödənişsiz məzuniyyət";
         return leaveName;

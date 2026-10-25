@@ -37,7 +37,7 @@ public class LeaveTransferService {
             var staff = employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId);
             Map<String, List<String>> choices = new LinkedHashMap<>();
             choices.put("Əməkdaş ID", staff.stream().map(Employee::getEmployeeId).filter(Objects::nonNull).toList());
-            choices.put("Məzuniyyət növü", types.findByTenantId(tenantId).stream().map(LeaveType::displayName).toList());
+            choices.put("Məzuniyyət növü", types.findByTenantId(tenantId).stream().filter(t -> !t.isArchived()).map(LeaveType::displayName).toList());
             choices.put("Vəziyyət", List.of("Təsdiqlənib", "Gözləmədə", "Rədd edilib"));
             List<List<String>> reference = new ArrayList<>();
             reference.add(List.of("Əməkdaş ID", "Əməkdaş", "FIN"));

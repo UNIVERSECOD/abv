@@ -142,7 +142,7 @@ public class LeaveService {
     private void validatePaidBalance(LeaveRequestDTO dto, Long tenantId, Long excludedId) {
         if (dto.getStatus() != LeaveStatus.APPROVED) return;
         var annualTypeIds = leaveTypeRepository.findByTenantId(tenantId).stream()
-                .filter(t -> "ANNUAL".equalsIgnoreCase(t.getLeaveCode()))
+                .filter(LeaveType::debitsBalance)
                 .map(LeaveType::getId).collect(Collectors.toSet());
         if (!annualTypeIds.contains(dto.getLeaveTypeId())) return;
         var employee = employeeRepository.findByTenantIdAndId(tenantId, dto.getEmployeeId())
@@ -162,7 +162,7 @@ public class LeaveService {
                 - LeaveBalanceService.countDays(existing, employee.getLeaveBalanceStartDate());
         if (requested > remaining) {
             throw new BadRequestException("Məzuniyyət balansı kifayət etmir. Qalıq: " + remaining
-                    + " gün, tələb olunan: " + requested + " gün. Ödənişsiz məzuniyyət seçə bilərsiniz.");
+                    + " gün, tələb olunan: " + requested + " gün. Balansdan çıxılmayan məzuniyyət növü seçə bilərsiniz.");
         }
     }
 
@@ -183,6 +183,12 @@ public class LeaveService {
         if (dto.getLeaveTypeId() == null || leaveTypeRepository.findByTenantId(tenantId).stream()
                 .noneMatch(type -> type.getId().equals(dto.getLeaveTypeId()))) {
             throw new BadRequestException("Məzuniyyət növü tapılmadı");
+        }
+        var chosenType = leaveTypeRepository.findByTenantId(tenantId).stream()
+                .filter(t -> t.getId().equals(dto.getLeaveTypeId())).findFirst().orElseThrow();
+        if (chosenType.isArchived() && (excludedId == null || leaveRequestRepository
+                .findByIdAndTenantId(excludedId, tenantId).filter(r -> r.getLeaveTypeId().equals(chosenType.getId())).isEmpty())) {
+            throw new BadRequestException("Silinmiş məzuniyyət növünü seçmək olmaz");
         }
         if (dto.getStartDate() == null || dto.getEndDate() == null || dto.getEndDate().isBefore(dto.getStartDate())) {
             throw new BadRequestException("Düzgün tarix aralığı seçin");

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Employee } from '../types'
+import LeaveUsageTable from './LeaveUsageTable.tsx'
 
 interface EmployeeDetailModalProps {
   employee: Employee
@@ -274,6 +275,7 @@ export default function EmployeeDetailModal({
                   </div>
                 </div>
               </div>
+              <LeaveUsageTable employeeId={employee.id} />
             </div>
           </div>
         )}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout.tsx'
 import { attendanceApi } from '../api/attendanceApi.ts'
 import { positionApi } from '../api/positionApi.ts'
@@ -18,13 +19,14 @@ const sections: { value: AttendanceReportView; label: string; description: strin
   { value: 'YEARLY', label: 'İllik', description: 'Hər əməkdaşın il üzrə yekunu. Yalnız seçilmiş tarix aralığındakı günlər toplanır.' },
 ]
 const statusLabels: Record<string, string> = {
+  WORKING_ON_LEAVE: 'Həm işdə, həm məzuniyyətdə',
   LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyət',
   DAY_OFF: 'İstirahət', OPEN_SESSION: 'İşdə', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
   ON_PERMISSION: 'İcazə', PERMITTED_EARLY_LEAVE: 'İcazə', PRESENT: 'İşdə olub', OVERTIME: 'Overtime',
   WORKDAY_COMPLETE: 'İşdə olub', NOT_STARTED: 'Başlamayıb', CLOSED: 'İşdə olub', MANUALLY_CORRECTED: 'Düzəliş',
 }
 const statusOptions = ['LATE', 'EARLY_LEAVE', 'OVERTIME', 'OPEN_SESSION', 'ABSENT', 'MISSING_EXIT',
-  'ON_PERMISSION', 'ON_LEAVE', 'DAY_OFF', 'WORKDAY_COMPLETE']
+  'ON_PERMISSION', 'ON_LEAVE', 'WORKING_ON_LEAVE', 'DAY_OFF', 'WORKDAY_COMPLETE']
 const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400'
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
 const sortFields: Partial<Record<string, AttendanceReportSortField>> = {
@@ -103,6 +105,7 @@ function Field({ name, label, children }: { name: string; label: string; childre
 }
 
 export default function ReportsPage() {
+  const [searchParams] = useSearchParams()
   const { rows, filters, page, totalPages, loading, error, totalElements, setFilters, setPage, fetchReport } = useAttendanceReportStore()
   const [positions, setPositions] = useState<Position[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
@@ -115,8 +118,10 @@ export default function ReportsPage() {
   const aggregate = !detail && !daily
 
   useEffect(() => {
-    setFilters(defaultAttendanceReportFilters())
-  }, [setFilters])
+    const initial = defaultAttendanceReportFilters()
+    if (searchParams.get('status') === 'WORKING_ON_LEAVE') initial.status = 'WORKING_ON_LEAVE'
+    setFilters(initial)
+  }, [setFilters, searchParams])
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void fetchReport() }, 250)

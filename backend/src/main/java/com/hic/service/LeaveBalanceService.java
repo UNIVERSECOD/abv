@@ -27,13 +27,42 @@ public class LeaveBalanceService {
                           LocalDate startDate, Integer openingDays, int usedDays,
                           Integer remainingDays, int unpaidDays) { }
 
+    public record TypeUsage(Long employeeId, String employeeCode, String employeeName, Long leaveTypeId,
+                            String leaveTypeName, String shortName, boolean deductFromBalance,
+                            int usedDays, Integer remainingDays) { }
+
+    @Transactional(readOnly = true)
+    public List<TypeUsage> getUsage(Long employeeId) {
+        Long tenant = TenantContext.getTenantId();
+        if (tenant == null) throw new IllegalStateException("Tenant context is missing");
+        var leaveTypes = types.findByTenantId(tenant);
+        var approved = requests.findByTenantIdAndStatus(tenant, LeaveRequest.LeaveStatus.APPROVED).stream()
+                .collect(Collectors.groupingBy(LeaveRequest::getEmployeeId));
+        List<TypeUsage> result = new ArrayList<>();
+        for (var employee : employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenant)) {
+            if (employeeId != null && !employeeId.equals(employee.getId())) continue;
+            var employeeRequests = approved.getOrDefault(employee.getId(), List.of());
+            var debitIds = leaveTypes.stream().filter(LeaveType::debitsBalance).map(LeaveType::getId).collect(Collectors.toSet());
+            int charged = countDays(employeeRequests.stream().filter(r -> debitIds.contains(r.getLeaveTypeId())).toList(), employee.getLeaveBalanceStartDate());
+            Integer remaining = employee.getAnnualLeaveBalance() == null ? null : employee.getAnnualLeaveBalance() - charged;
+            for (var type : leaveTypes) {
+                var typeRequests = employeeRequests.stream().filter(r -> type.getId().equals(r.getLeaveTypeId())).toList();
+                if (type.isArchived() && typeRequests.isEmpty()) continue;
+                result.add(new TypeUsage(employee.getId(), employee.getEmployeeId(), employee.getLastName() + " " + employee.getFirstName(),
+                        type.getId(), type.displayName(), type.getShortName(), type.debitsBalance(),
+                        countDays(typeRequests, employee.getLeaveBalanceStartDate()), type.debitsBalance() ? remaining : null));
+            }
+        }
+        return result;
+    }
+
     @Transactional(readOnly = true)
     public List<Balance> getAll() {
         Long tenant = TenantContext.getTenantId();
         if (tenant == null) throw new IllegalStateException("Tenant context is missing");
         List<LeaveType> leaveTypes = types.findByTenantId(tenant);
         Set<Long> annualTypes = leaveTypes.stream()
-                .filter(t -> "ANNUAL".equalsIgnoreCase(t.getLeaveCode()))
+                .filter(LeaveType::debitsBalance)
                 .map(LeaveType::getId).collect(Collectors.toSet());
         Set<Long> unpaidTypes = leaveTypes.stream()
                 .filter(t -> "UNPAID".equalsIgnoreCase(t.getLeaveCode()))

@@ -59,6 +59,7 @@ public class TabelService {
     private final HolidayPermissionRepository holidayPermissionRepository;
     private final AttendanceScheduleResolver attendanceScheduleResolver;
     private final McgTabelProjectionService mcgProjectionService;
+    private final com.hic.repository.LeaveTypeRepository leaveTypeRepository;
 
     public TabelMonthlyDTO getMonthlyTabel(int year,
                                            int month,
@@ -106,11 +107,21 @@ public class TabelService {
         }
 
         Map<Long, Set<LocalDate>> leaveByEmployee = buildLeaveDaysByEmployee(tenantId, employees, start, end);
-        Map<Long, Set<LocalDate>> vacationByEmployee = new HashMap<>();
+        Map<Long, Map<LocalDate, String>> vacationByEmployee = new HashMap<>();
+        Map<Long, com.hic.model.LeaveType> leaveTypes = new HashMap<>();
+        leaveTypeRepository.findByTenantId(tenantId).forEach(t -> leaveTypes.put(t.getId(), t));
+        Map<String, String> leaveLegend = new java.util.TreeMap<>();
         if (!employees.isEmpty()) {
             for (LeaveRequest leave : leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(
                     tenantId, employees.stream().map(Employee::getId).toList(), start, end)) {
-                addDateRange(vacationByEmployee, leave.getEmployeeId(), leave.getStartDate(), leave.getEndDate(), start, end);
+                var type = leaveTypes.get(leave.getLeaveTypeId());
+                String code = type == null || type.getShortName() == null ? "M" : type.getShortName();
+                leaveLegend.merge(code, type == null ? "Məzuniyyət" : type.displayName(),
+                        (a, b) -> a.equals(b) ? a : a + ", " + b);
+                LocalDate from = leave.getStartDate().isBefore(start) ? start : leave.getStartDate();
+                LocalDate through = leave.getEndDate().isAfter(end) ? end : leave.getEndDate();
+                var dates = vacationByEmployee.computeIfAbsent(leave.getEmployeeId(), ignored -> new HashMap<>());
+                for (LocalDate date = from; !date.isAfter(through); date = date.plusDays(1)) dates.put(date, code);
             }
         }
         Map<Long, Set<LocalDate>> holidayByEmployee = buildHolidayDaysByEmployee(tenantId, employees, start, end);
@@ -143,8 +154,8 @@ public class TabelService {
                 LocalDate date = yearMonth.atDay(day);
                 Object value;
 
-                if (vacationByEmployee.getOrDefault(employee.getId(), Set.of()).contains(date)) {
-                    value = "M";
+                if (vacationByEmployee.getOrDefault(employee.getId(), Map.of()).containsKey(date)) {
+                    value = vacationByEmployee.get(employee.getId()).get(date);
                 } else if (holidayDates.contains(date) || leaveDates.contains(date)) {
                     value = mcg ? "Q/İ" : QI_CODE;
                 } else {
@@ -202,6 +213,7 @@ public class TabelService {
         dto.setDaysInMonth(yearMonth.lengthOfMonth());
         dto.setEmployees(rows.size());
         dto.setRows(rows);
+        dto.setLeaveLegend(leaveLegend);
         return dto;
     }
 
@@ -304,6 +316,9 @@ public class TabelService {
                 if (mcg) totalCell.setCellStyle(ordinaryHoursStyle);
             }
 
+            for (var legend : tabel.getLeaveLegend().entrySet()) {
+                sheet.createRow(++rowIndex).createCell(0).setCellValue(legend.getKey() + " = " + legend.getValue());
+            }
             for (int i = 0; i <= 5; i++) {
                 sheet.autoSizeColumn(i);
             }
@@ -326,7 +341,7 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ. M = təsdiqlənmiş məzuniyyət.");
+                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ. Məzuniyyət qısaltmalarının açıqlaması aşağıda verilir.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "Qrafik bitdikdən sonrakı faktiki giriş–çıxış müddətləri 60 dəqiqəyə çatdıqda overtime sayılır; aradakı boşluqlar sayılmır. Göy = overtime, qırmızı = az iş, yaşıl 1 = norma, qara = digər.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(

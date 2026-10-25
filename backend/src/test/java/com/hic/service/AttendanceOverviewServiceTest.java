@@ -32,6 +32,7 @@ class AttendanceOverviewServiceTest {
     @Mock AttendanceScheduleResolver scheduleResolver;
     @Spy AttendanceInferenceService inferenceService = new AttendanceInferenceService();
     @Mock UserScopeService userScope;
+    @Mock LeaveRequestRepository leaveRequests;
     @InjectMocks AttendanceOverviewService service;
     Employee employee;
     LocalDate start = LocalDate.of(2026, 9, 1);
@@ -56,6 +57,21 @@ class AttendanceOverviewServiceTest {
         query.setStart(start); query.setEnd(start.plusDays(2));
     }
     @AfterEach void cleanup() { TenantContext.clear(); }
+
+    @Test void leaveAttendanceWarningRequiresBothApprovedLeaveAndAttendance() {
+        var leave = new LeaveRequest(); leave.setEmployeeId(1L); leave.setStartDate(start);
+        leave.setEndDate(start.plusDays(2)); leave.setStatus(LeaveRequest.LeaveStatus.APPROVED);
+        when(leaveRequests.findApprovedByTenantAndEmployeeIdsAndDateRange(7L, List.of(1L), start, start.plusDays(2)))
+                .thenReturn(List.of(leave));
+        query.setStatus("WORKING_ON_LEAVE");
+        var rows = service.report(query).getContent();
+        assertThat(rows).isNotEmpty();
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getStatuses()).contains("ON_LEAVE", "WORKING_ON_LEAVE");
+            assertThat(row.getCheckInTime()).isNotNull();
+        });
+        assertThat(rows).noneMatch(row -> row.getDate().equals(start.plusDays(2)));
+    }
 
     @Test void missingExitFilterAndExcelIncludeOpenSessions() throws Exception {
         when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))

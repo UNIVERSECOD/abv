@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import LeaveTypesPanel from '../components/LeaveTypesPanel.tsx'
+import LeaveUsageTable from '../components/LeaveUsageTable.tsx'
 import PermissionAssignmentPage from './PermissionAssignmentPage.tsx'
 import { leaveApi, LeaveBalance, LeavePayload, LeaveRequest, LeaveStatus, LeaveType } from '../api/leaveApi.ts'
 import { employeeApi } from '../api/employeeApi.ts'
@@ -17,8 +19,7 @@ const inputClass = 'mt-1 w-full rounded-md border border-slate-300 px-3 py-2 tex
 const buttonClass =
   'rounded-md border border-slate-300 bg-white px-4 py-2 text-sm hover:bg-slate-50 disabled:opacity-50'
 
-const leaveTypeLabel = (type: LeaveType) =>
-  type.leaveCode === 'ANNUAL' ? 'Ödənişli məzuniyyət' : type.leaveCode === 'UNPAID' ? 'Ödənişsiz məzuniyyət' : type.leaveName
+const leaveTypeLabel = (type: LeaveType) => type.leaveName
 
 function LeaveModal({
   initial,
@@ -34,8 +35,8 @@ function LeaveModal({
   onClose: () => void
 }) {
   const [employeeId, setEmployeeId] = useState(initial?.employeeId ?? 0)
-  const choices = types.filter(t => ['ANNUAL', 'UNPAID'].includes(t.leaveCode) || t.id === initial?.leaveTypeId)
-  const [leaveTypeId, setLeaveTypeId] = useState(initial?.leaveTypeId ?? types.find(t => t.leaveCode === 'ANNUAL')?.id ?? 0)
+  const choices = types.filter(t => !t.archived || t.id === initial?.leaveTypeId)
+  const [leaveTypeId, setLeaveTypeId] = useState(initial?.leaveTypeId ?? 0)
   const [startDate, setStartDate] = useState(initial?.startDate ?? '')
   const [endDate, setEndDate] = useState(initial?.endDate ?? '')
   const [status, setStatus] = useState<LeaveStatus>(initial?.status ?? 'APPROVED')
@@ -87,7 +88,7 @@ function LeaveModal({
           </button>
         </div>
         <p className="mt-2 text-sm text-slate-500">
-          Başlanğıc və bitmə günləri daxildir. Təsdiqlənmiş məzuniyyət Tabeldə M ilə göstərilir.
+          Başlanğıc və bitmə günləri daxildir. Təsdiqlənmiş məzuniyyət Tabeldə növün qısaltması ilə göstərilir.
         </p>
         <div className="mt-4 space-y-4">
           <div>
@@ -134,7 +135,7 @@ function LeaveModal({
             )}
           </label>
           <p className="text-sm text-slate-500">
-            Ödənişli məzuniyyət balansdan çıxılır və qalan balansdan çox təsdiqlənə bilməz. Ödənişsiz məzuniyyət balansı azaltmır, günləri ayrıca sayılır. Hər ikisi Tabeldə M göstərilir.
+            Balansdan çıxılan növlər qalan balansdan çox təsdiqlənə bilməz. Hər növün istifadə günləri ayrıca sayılır. Tabeldə seçilmiş növün qısaltması göstərilir.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="text-sm">
@@ -201,6 +202,7 @@ function LeaveModal({
 }
 
 function LeavesPanel() {
+  const [usageRefresh, setUsageRefresh] = useState(0)
   const [balances, setBalances] = useState<LeaveBalance[]>([])
   const [leaves, setLeaves] = useState<LeaveRequest[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -234,6 +236,7 @@ function LeavesPanel() {
       setTypes(typeRes.data.data)
       setEmployees(staff)
       setBalances(balanceRes.data.data)
+      setUsageRefresh(value => value + 1)
     } catch (e) {
       setError(getApiErrorMessage(e, 'Məzuniyyətləri yükləmək mümkün olmadı'))
     } finally {
@@ -312,7 +315,7 @@ function LeavesPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Məzuniyyətlər</h2>
-          <p className="mt-1 text-sm text-slate-500">Təsdiqlənmiş günlər Tabeldə M ilə göstərilir.</p>
+          <p className="mt-1 text-sm text-slate-500">Təsdiqlənmiş günlər Tabeldə növün qısaltması ilə göstərilir.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button className={buttonClass} disabled={busy || loading} onClick={() => void download(true)}>
@@ -326,7 +329,7 @@ function LeavesPanel() {
           </button>
           <button
             className="rounded-md bg-purple-600 px-4 py-2 text-sm text-white disabled:opacity-50"
-            disabled={busy || loading || !types.length}
+            disabled={busy || loading || !types.some(t => !t.archived)}
             onClick={() => setModal({})}
           >
             + Yeni məzuniyyət
@@ -348,19 +351,20 @@ function LeavesPanel() {
           {error}
         </p>
       )}
-      {!loading && !types.length && <p className="text-sm text-amber-700">Məzuniyyət növü tapılmadı.</p>}
+      {!loading && !types.some(t => !t.archived) && <p className="text-sm text-amber-700">Əvvəl “Məzuniyyət növləri” bölməsində növ yaradın, sonra əməkdaşa məzuniyyət təyin edin.</p>}
+      <LeaveUsageTable refresh={usageRefresh} />
       {!loading && !error && (
         <section className="rounded-md border border-slate-200 bg-white p-4">
           <h3 className="font-semibold">Məzuniyyət balansı</h3>
           <p className="my-2 text-sm text-slate-500">
-            Başlanğıc qalığından yalnız təsdiqlənmiş ödənişli (illik) məzuniyyət çıxılır. Ödənişsiz günlər ayrıca sayılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
+            Başlanğıc qalığından “Balansdan çıxılsın” seçilmiş növlərin təsdiqlənmiş günləri çıxılır. Başlanğıc tarixindən əvvəlki günlər çıxılmır.
             Gələcək tarixlər daxil olmaqla təsdiqlənmiş günlər dərhal balansdan çıxılır; ləğv edildikdə geri qayıdır. Günlər təqvimlə sayılır, bayramlar çıxılmır.
             İllik günlər avtomatik əlavə edilmir. Başlanğıc qalığı işçi kartında düzəldilə bilər.
           </p>
           <div className="max-h-80 overflow-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-slate-50"><tr>
-                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'Ödənişli istifadə olunan', 'Qalan', 'Ödənişsiz günlər'].map(h =>
+                {['Əməkdaş', 'Başlanğıc tarixi', 'Başlanğıc qalığı', 'Balansdan çıxılan günlər', 'Qalan', 'Ödənişsiz günlər'].map(h =>
                   <th className="whitespace-nowrap p-3" key={h}>{h}</th>)}
               </tr></thead>
               <tbody>{balances.filter(b => `${b.employeeName} ${b.employeeCode}`.toLocaleLowerCase('az').includes(search.toLocaleLowerCase('az'))).map(b => (
@@ -495,13 +499,13 @@ function LeavesPanel() {
 }
 
 export default function PermissionsLeavePage() {
-  const [tab, setTab] = useState<'permissions' | 'leaves'>('permissions')
+  const [tab, setTab] = useState<'permissions' | 'leaves' | 'types'>('permissions')
   return (
     <Layout>
       <div className="border-b border-slate-200 bg-white px-4 pt-5 sm:px-6">
         <h1 className="text-2xl font-bold text-slate-900">İcazə / Məzuniyyət</h1>
         <div role="tablist" aria-label="İcazə və məzuniyyət" className="mt-4 flex gap-5">
-          {(['permissions', 'leaves'] as const).map((value) => (
+          {(['permissions', 'leaves', 'types'] as const).map((value) => (
             <button
               role="tab"
               aria-selected={tab === value}
@@ -509,12 +513,12 @@ export default function PermissionsLeavePage() {
               className={`border-b-2 px-1 pb-3 text-sm font-medium ${tab === value ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500'}`}
               onClick={() => setTab(value)}
             >
-              {value === 'permissions' ? 'İcazələr' : 'Məzuniyyətlər'}
+              {value === 'permissions' ? 'İcazələr' : value === 'types' ? 'Məzuniyyət növləri' : 'Məzuniyyətlər'}
             </button>
           ))}
         </div>
       </div>
-      {tab === 'permissions' ? <PermissionAssignmentPage embedded /> : <LeavesPanel />}
+      {tab === 'permissions' ? <PermissionAssignmentPage embedded /> : tab === 'types' ? <LeaveTypesPanel /> : <LeavesPanel />}
     </Layout>
   )
 }

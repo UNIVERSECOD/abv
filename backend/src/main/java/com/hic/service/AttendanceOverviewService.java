@@ -37,6 +37,7 @@ public class AttendanceOverviewService {
     private final AttendanceScheduleResolver scheduleResolver;
     private final AttendanceInferenceService inferenceService;
     private final UserScopeService userScope;
+    private final LeaveRequestRepository leaveRequests;
 
     public PaginatedResponse<AttendanceOverviewRowDTO> report(AttendanceReportQuery query) {
         List<AttendanceOverviewRowDTO> rows = AttendanceReportSort.apply(rows(query), query);
@@ -60,6 +61,9 @@ public class AttendanceOverviewService {
                 .toList();
         if (selected.isEmpty()) return List.of();
         var employeeMap = index(selected, Employee::getId);
+        var approvedLeaves = leaveRequests.findApprovedByTenantAndEmployeeIdsAndDateRange(
+                tenant, selected.stream().map(Employee::getId).toList(), q.getStart(), q.getEnd()).stream()
+                .collect(Collectors.groupingBy(LeaveRequest::getEmployeeId));
         var departmentMap = index(departments.findByTenantId(tenant), Department::getId);
         var positionMap = index(positions.findByTenantId(tenant), Position::getId);
         var branchMap = index(branches.findByTenantId(tenant), Branch::getId);
@@ -168,12 +172,18 @@ public class AttendanceOverviewService {
                 if (row.getEarlyLeaveMinutes() > 0) statuses.add("EARLY_LEAVE");
                 if (row.getPermissionMinutes() > 0) statuses.add("ON_PERMISSION");
                 if (zero(row.getOvertimeMinutes()) > 0) statuses.add("OVERTIME");
+                boolean onLeave = approvedLeaves.getOrDefault(employee.getId(), List.of()).stream()
+                        .anyMatch(l -> !daily.getDate().isBefore(l.getStartDate()) && !daily.getDate().isAfter(l.getEndDate()));
+                if (onLeave) {
+                    statuses.add("ON_LEAVE");
+                    if (daily.getCheckInTime() != null || !dayLogs.isEmpty()) statuses.add("WORKING_ON_LEAVE");
+                }
                 row.setStatuses(List.copyOf(statuses));
                 row.setAttendedDays(daily.getCheckInTime() != null ? 1 : 0);
                 row.setAbsentDays(status.equals("ABSENT") ? 1 : 0);
                 row.setLateDays(row.getLateMinutes() > 0 ? 1 : 0);
                 row.setEarlyLeaveDays(row.getEarlyLeaveMinutes() > 0 ? 1 : 0);
-                row.setLeaveDays(status.equals("ON_LEAVE") ? 1 : 0);
+                row.setLeaveDays(onLeave || status.equals("ON_LEAVE") ? 1 : 0);
                 row.setMissingExitDays(statuses.contains("MISSING_EXIT") || statuses.contains("OPEN_SESSION") ? 1 : 0);
                 if (q.getView() != AttendanceReportQuery.View.DAILY || matchesStatus(row, q.getStatus())) result.add(row);
             }
@@ -282,7 +292,7 @@ public class AttendanceOverviewService {
         if (q.getStatus() != null && !q.getStatus().isBlank()) {
             Set<String> allowed = Arrays.stream(DailyAttendanceSummary.AttendanceStatus.values())
                     .map(Enum::name).collect(Collectors.toSet());
-            allowed.addAll(Set.of("LATE_AND_EARLY", "NOT_STARTED", "OVERTIME"));
+            allowed.addAll(Set.of("LATE_AND_EARLY", "NOT_STARTED", "OVERTIME", "WORKING_ON_LEAVE"));
             if (q.getView() != AttendanceReportQuery.View.DAILY || Arrays.stream(q.getStatus().split(",", -1))
                     .map(String::trim).anyMatch(s -> !allowed.contains(s))) {
                 throw new BadRequestException("Status filtri yalnız gündəlik hesabat üçün düzgün seçilməlidir.");
@@ -344,6 +354,7 @@ public class AttendanceOverviewService {
         return switch (value) {
             case "LATE" -> "Gecikib"; case "EARLY_LEAVE" -> "Erkən çıxıb";
             case "ABSENT" -> "Gəlməyib"; case "ON_LEAVE" -> "Məzuniyyət";
+            case "WORKING_ON_LEAVE" -> "Həm işdə, həm məzuniyyətdə";
             case "DAY_OFF" -> "İstirahət";
             case "OPEN", "MISSING_EXIT" -> "Çıxış yoxdur";
             case "OPEN_SESSION" -> "İşdə";

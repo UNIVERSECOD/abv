@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestHeader;
+import java.io.IOException;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -45,6 +47,7 @@ public class EventReadController {
 
     @GetMapping("/punches")
     public List<PunchResponse> getPunches(
+            @RequestHeader(value = "X-Allowed-Device-Ids", required = false) String scope,
             @RequestParam(required = false) Long deviceId,
             @RequestParam(required = false) String employeeNo,
             @RequestParam(required = false) Integer limit,
@@ -64,7 +67,19 @@ public class EventReadController {
                 : PageRequest.of(0, validateLimit(limit));
 
         List<AttendancePunchEntity> punches;
-        if (hasRange) {
+        if (scope != null) {
+            var ids = allowedDeviceIds(scope);
+            var sorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                    org.springframework.data.domain.Sort.by(hasRange ? org.springframework.data.domain.Sort.Direction.ASC : org.springframework.data.domain.Sort.Direction.DESC, "punchTime"));
+            punches = attendancePunchRepository.findAll((root, query, cb) -> {
+                var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+                predicates.add(root.get("deviceId").in(ids));
+                if (deviceId != null) predicates.add(cb.equal(root.get("deviceId"), deviceId));
+                if (normalizedEmployeeNo != null) predicates.add(cb.equal(root.get("employeeNo"), normalizedEmployeeNo));
+                if (hasRange) predicates.add(cb.between(root.get("punchTime"), start, end));
+                return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+            }, sorted).getContent();
+        } else if (hasRange) {
             if (deviceId != null && normalizedEmployeeNo != null) {
                 punches = attendancePunchRepository.findByDeviceIdAndEmployeeNoAndPunchTimeBetweenOrderByPunchTimeAsc(
                         deviceId, normalizedEmployeeNo, start, end, pageable);
@@ -102,6 +117,7 @@ public class EventReadController {
 
     @GetMapping("/raw-events")
     public List<RawEventResponse> getRawEvents(
+            @RequestHeader(value = "X-Allowed-Device-Ids", required = false) String scope,
             @RequestParam(required = false) Long deviceId,
             @RequestParam(required = false) Integer major,
             @RequestParam(required = false) Integer minor,
@@ -110,7 +126,21 @@ public class EventReadController {
     ) {
         Pageable pageable = PageRequest.of(0, validateLimit(limit));
 
-        return acsRawEventRepository.findRecent(deviceId, major, minor, pageable).stream()
+        List<AcsRawEventEntity> events;
+        if (scope == null) {
+            events = acsRawEventRepository.findRecent(deviceId, major, minor, pageable);
+        } else {
+            var ids = allowedDeviceIds(scope);
+            events = acsRawEventRepository.findAll((root, query, cb) -> {
+                var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+                predicates.add(root.get("deviceId").in(ids));
+                if (deviceId != null) predicates.add(cb.equal(root.get("deviceId"), deviceId));
+                if (major != null) predicates.add(cb.equal(root.get("majorEventType"), major));
+                if (minor != null) predicates.add(cb.equal(root.get("subEventType"), minor));
+                return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+            }, PageRequest.of(0, pageable.getPageSize(), org.springframework.data.domain.Sort.by("eventTime").descending())).getContent();
+        }
+        return events.stream()
                 .map(e -> new RawEventResponse(
                         e.getId(),
                         e.getDeviceId(),
@@ -127,12 +157,20 @@ public class EventReadController {
 
     @GetMapping("/failed-attempts")
     public List<FailedAttemptResponse> getFailedAttempts(
+            @RequestHeader(value = "X-Allowed-Device-Ids", required = false) String scope,
             @RequestParam(required = false) Long deviceId,
             @RequestParam(required = false) Integer limit
     ) {
         Pageable pageable = PageRequest.of(0, validateLimit(limit));
 
-        List<AcsFailedAttemptEntity> attempts = deviceId == null
+        List<AcsFailedAttemptEntity> attempts;
+        if (scope != null) {
+            var ids = allowedDeviceIds(scope);
+            attempts = acsFailedAttemptRepository.findAll((root, query, cb) -> deviceId == null
+                    ? root.get("deviceId").in(ids)
+                    : cb.and(root.get("deviceId").in(ids), cb.equal(root.get("deviceId"), deviceId)),
+                    PageRequest.of(0, pageable.getPageSize(), org.springframework.data.domain.Sort.by("eventTime").descending())).getContent();
+        } else attempts = deviceId == null
                 ? acsFailedAttemptRepository.findByOrderByEventTimeDesc(pageable)
                 : acsFailedAttemptRepository.findByDeviceIdOrderByEventTimeDesc(deviceId, pageable);
 
@@ -232,6 +270,13 @@ public class EventReadController {
     private ResponseEntity<byte[]> fetchAcsEventPicture(Long deviceId, String url) {
         DeviceEntity device = resolveDeviceForPicture(deviceId, url);
         try {
+            if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
+                com.abv.hrerpisapi.device.DigestHttpClient.requireSameOrigin(url, "http://" + device.getIp());
+            }
+        } catch (IOException forbiddenOrigin) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Picture origin does not match device");
+        }
+        try {
             byte[] imageBytes = isapiClient.downloadFaceImage(device, url)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Picture not found on device"));
             return ResponseEntity.ok()
@@ -246,13 +291,6 @@ public class EventReadController {
 
     /** Use the device IP embedded in pictureURL when it differs from the requested deviceId. */
     private DeviceEntity resolveDeviceForPicture(Long deviceId, String url) {
-        String host = extractHostFromUrl(url);
-        if (host != null) {
-            var byIp = deviceRepository.findByIp(host);
-            if (byIp.isPresent()) {
-                return byIp.get();
-            }
-        }
         return deviceRepository.findById(deviceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Device not found"));
     }
@@ -271,6 +309,15 @@ public class EventReadController {
             return url.substring(hostStart);
         }
         return url.substring(hostStart, pathStart);
+    }
+
+    private static java.util.List<Long> allowedDeviceIds(String scope) {
+        try {
+            if (scope.isBlank()) return java.util.List.of(-1L);
+            return java.util.Arrays.stream(scope.split(",")).map(Long::valueOf).toList();
+        } catch (NumberFormatException invalid) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid device scope");
+        }
     }
 
     private static int validateLimit(Integer limit) {

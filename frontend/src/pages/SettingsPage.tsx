@@ -207,7 +207,9 @@ export default function SettingsPage() {
       setNewPassword('')
       setConfirmPassword('')
       setPasswordSuccess(t('settings.passwordUpdated'))
-      toast.success(t('settings.passwordUpdated'))
+      toast.success('Şifrə dəyişdirildi. Yenidən daxil olun.')
+      useAuthStore.getState().logout()
+      window.location.assign('/login')
     } catch (requestError: unknown) {
       const message = getApiErrorMessage(requestError, t('settings.passwordUpdateFailed'))
       setPasswordError(message)

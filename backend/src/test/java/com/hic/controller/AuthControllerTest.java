@@ -158,6 +158,7 @@ class AuthControllerTest {
     @Test
     void completeInitialSetup_validRequest_returnsTokens() throws Exception {
         InitialAdminSetupRequest request = new InitialAdminSetupRequest();
+        request.setSetupToken("synthetic-setup-token-only-for-tests");
         request.setPassword("new-password1");
         request.setConfirmPassword("new-password1");
 

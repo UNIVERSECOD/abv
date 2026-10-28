@@ -7,7 +7,7 @@ import org.springframework.data.domain.Pageable;
 import java.time.OffsetDateTime;
 import java.util.List;
 
-public interface AttendancePunchRepository extends JpaRepository<AttendancePunchEntity, Long> {
+public interface AttendancePunchRepository extends JpaRepository<AttendancePunchEntity, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<AttendancePunchEntity> {
     List<AttendancePunchEntity> findByOrderByPunchTimeDesc(Pageable pageable);
 
     List<AttendancePunchEntity> findByDeviceIdOrderByPunchTimeDesc(Long deviceId, Pageable pageable);

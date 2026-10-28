@@ -7,6 +7,8 @@ import com.hic.dto.DeviceLogSearchDTO;
 import com.hic.exception.BadRequestException;
 import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.DeviceConfig;
+import com.hic.util.TenantContext;
+import java.net.URI;
 import com.hic.repository.DeviceConfigRepository;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -70,6 +72,7 @@ public class DeviceLogSearchService {
     ) {
         DeviceConfig device = deviceConfigRepository.findById(deviceConfigId)
                 .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", deviceConfigId));
+        requireTenant(device);
 
         Long isapiDeviceId = resolveIsapiDeviceId(device);
         int searchResultPosition = page * pageSize;
@@ -144,22 +147,19 @@ public class DeviceLogSearchService {
     }
 
     public byte[] fetchPicture(String pictureUrl, Long deviceConfigId) {
-        Optional<byte[]> cached = devicePictureCache.get(pictureUrl);
-        if (cached.isPresent()) {
-            return cached.get();
-        }
-
         DeviceConfig device = deviceConfigRepository.findById(deviceConfigId)
                 .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", deviceConfigId));
-
+        requireTenant(device);
         Long isapiDeviceId = resolveIsapiDeviceIdForPicture(device, pictureUrl);
+        String cacheKey = device.getTenantId() + ":" + deviceConfigId + ":" + pictureUrl;
+        Optional<byte[]> cached = devicePictureCache.get(cacheKey);
+        if (cached.isPresent()) return cached.get();
         String url = UriComponentsBuilder
                 .fromHttpUrl(trimTrailingSlash(isapiBaseUrl) + "/api/acs-events/picture")
                 .queryParam("deviceId", isapiDeviceId)
                 .toUriString();
 
-        log.info("Fetching picture via ISAPI: deviceConfigId={}, isapiDeviceId={}, pictureUrl={}",
-                deviceConfigId, isapiDeviceId, pictureUrl);
+        log.info("Fetching picture via ISAPI: deviceConfigId={}, isapiDeviceId={}", deviceConfigId, isapiDeviceId);
 
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -170,7 +170,7 @@ public class DeviceLogSearchService {
             if (body == null || body.length == 0) {
                 throw new RuntimeException("Picture is no longer available on the device.");
             }
-            devicePictureCache.put(pictureUrl, body);
+            devicePictureCache.put(cacheKey, body);
             return body;
         } catch (HttpStatusCodeException ex) {
             if (ex.getStatusCode().value() == 404) {
@@ -187,19 +187,32 @@ public class DeviceLogSearchService {
      * Picks the ISAPI device whose IP matches the picture URL host so credentials
      * are applied to the device that actually stores the image file.
      */
+    private void requireTenant(DeviceConfig device) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null || !tenantId.equals(device.getTenantId())) {
+            throw new ResourceNotFoundException("DeviceConfig", device.getId());
+        }
+    }
+
     private Long resolveIsapiDeviceIdForPicture(DeviceConfig selectedDevice, String pictureUrl) {
-        String pictureHost = extractHostFromPictureUrl(pictureUrl);
-        if (StringUtils.hasText(pictureHost)) {
-            Optional<DeviceConfig> byIp = deviceConfigRepository.findByDeviceIp(pictureHost);
-            if (byIp.isPresent() && StringUtils.hasText(byIp.get().getDeviceId())) {
-                try {
-                    return Long.valueOf(byIp.get().getDeviceId().trim());
-                } catch (NumberFormatException ignored) {
-                    // fall through to selected device mapping
+        try {
+            URI uri = URI.create(pictureUrl);
+            if (uri.getRawUserInfo() != null || uri.getHost() == null || uri.getFragment() != null
+                    || !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))) {
+                throw new IllegalArgumentException();
+            }
+            for (DeviceConfig candidate : deviceConfigRepository.findByTenantId(selectedDevice.getTenantId())) {
+                URI origin = URI.create("http://" + candidate.getDeviceIp());
+                int port = uri.getPort() < 0 ? ("https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80) : uri.getPort();
+                int configuredPort = origin.getPort() < 0 ? 80 : origin.getPort();
+                if (uri.getHost().equalsIgnoreCase(origin.getHost()) && "http".equalsIgnoreCase(uri.getScheme()) && port == configuredPort) {
+                    return resolveIsapiDeviceId(candidate);
                 }
             }
+        } catch (IllegalArgumentException ignored) {
+            // Reject malformed URLs without disclosing capability tokens in errors.
         }
-        return resolveIsapiDeviceId(selectedDevice);
+        throw new BadRequestException("Şəkil ünvanı şirkətin qeydiyyatlı cihazına aid deyil");
     }
 
     /** Fetch pictures in the background right after search while {@code @WEB} tokens are fresh. */
@@ -207,7 +220,7 @@ public class DeviceLogSearchService {
         List<String> urls = items.stream()
                 .map(DeviceLogSearchDTO.EventEntryDTO::getPictureURL)
                 .filter(StringUtils::hasText)
-                .filter(url -> devicePictureCache.get(url).isEmpty())
+                .filter(url -> devicePictureCache.get(TenantContext.getTenantId() + ":" + deviceConfigId + ":" + url).isEmpty())
                 .distinct()
                 .toList();
 
@@ -215,32 +228,21 @@ public class DeviceLogSearchService {
             return;
         }
 
+        Long tenantId = TenantContext.getTenantId();
         CompletableFuture.runAsync(() -> {
-            for (String url : urls) {
-                try {
-                    byte[] bytes = fetchPicture(url, deviceConfigId);
-                    devicePictureCache.put(url, bytes);
-                } catch (RuntimeException ex) {
-                    log.debug("Picture prefetch skipped for {}: {}", url, ex.getMessage());
+            TenantContext.setTenantId(tenantId);
+            try {
+                for (String url : urls) {
+                    try {
+                        fetchPicture(url, deviceConfigId);
+                    } catch (RuntimeException ex) {
+                        log.debug("Picture prefetch skipped for device {}", deviceConfigId);
+                    }
                 }
+            } finally {
+                TenantContext.clear();
             }
         });
-    }
-
-    private String extractHostFromPictureUrl(String pictureUrl) {
-        if (!StringUtils.hasText(pictureUrl)) {
-            return null;
-        }
-        if (!pictureUrl.startsWith("http://") && !pictureUrl.startsWith("https://")) {
-            return null;
-        }
-        int schemeSep = pictureUrl.indexOf("://");
-        int hostStart = schemeSep + 3;
-        int pathStart = pictureUrl.indexOf('/', hostStart);
-        if (pathStart < 0) {
-            return pictureUrl.substring(hostStart);
-        }
-        return pictureUrl.substring(hostStart, pathStart);
     }
 
     private Long resolveIsapiDeviceId(DeviceConfig device) {

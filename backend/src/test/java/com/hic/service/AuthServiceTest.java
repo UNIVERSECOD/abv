@@ -36,6 +36,12 @@ import static org.mockito.Mockito.when;
 class AuthServiceTest {
 
     @Mock
+    private InitialSetupGuard initialSetupGuard;
+
+    @org.junit.jupiter.api.AfterEach
+    void clearTenant() { com.hic.util.TenantContext.clear(); }
+
+    @Mock
     private UserRepository userRepository;
 
     @Mock
@@ -73,8 +79,8 @@ class AuthServiceTest {
 
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(testUser));
         when(passwordUtil.verifyPassword("admin123", testUser.getPasswordHash())).thenReturn(true);
-        when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any())).thenReturn("access-token");
-        when(jwtUtil.generateRefreshToken(anyString())).thenReturn("refresh-token");
+        when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("access-token");
+        when(jwtUtil.generateRefreshToken(anyString(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("refresh-token");
 
         LoginResponse response = authService.login(request);
 
@@ -163,12 +169,13 @@ class AuthServiceTest {
         when(userRepository.findByUsernameForUpdate("admin")).thenReturn(Optional.of(testUser));
         when(passwordUtil.hashPassword("new-password1")).thenReturn("new-hash");
         when(userRepository.save(testUser)).thenReturn(testUser);
-        when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any())).thenReturn("access-token");
-        when(jwtUtil.generateRefreshToken("admin")).thenReturn("refresh-token");
+        when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("access-token");
+        when(jwtUtil.generateRefreshToken(org.mockito.ArgumentMatchers.eq("admin"), org.mockito.ArgumentMatchers.anyLong())).thenReturn("refresh-token");
 
         LoginResponse response = authService.completeInitialAdminSetup(request);
 
         assertThat(testUser.getPasswordHash()).isEqualTo("new-hash");
+        assertThat(testUser.getSessionVersion()).isEqualTo(1);
         assertThat(testUser.isPasswordSetupRequired()).isFalse();
         assertThat(response.getToken()).isEqualTo("access-token");
         assertThat(response.getUser().getUsername()).isEqualTo("admin");
@@ -281,6 +288,7 @@ class AuthServiceTest {
 
     @Test
     void signup_headOfficeHrCreatesOfficeHr_succeeds() {
+        com.hic.util.TenantContext.setTenantId(1L);
         com.hic.model.Tenant tenant = new com.hic.model.Tenant();
         tenant.setId(1L);
 
@@ -295,8 +303,8 @@ class AuthServiceTest {
         when(tenantRepository.findByTenantCode("DEFAULT")).thenReturn(Optional.of(tenant));
         when(passwordUtil.hashPassword("password1")).thenReturn("hash");
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(jwtUtil.generateToken(anyString(), any(), any(), any())).thenReturn("tok");
-        when(jwtUtil.generateRefreshToken(anyString())).thenReturn("ref");
+        when(jwtUtil.generateToken(anyString(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("tok");
+        when(jwtUtil.generateRefreshToken(anyString(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("ref");
 
         LoginResponse response = authService.signup(request, UserType.HEAD_OFFICE_HR);
 
@@ -385,8 +393,8 @@ class AuthServiceTest {
         when(tenantRepository.findByTenantCode("DEFAULT")).thenReturn(Optional.of(tenant));
         when(passwordUtil.hashPassword("password1")).thenReturn("hash");
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(jwtUtil.generateToken(anyString(), any(), any(), any())).thenReturn("tok");
-        when(jwtUtil.generateRefreshToken(anyString())).thenReturn("ref");
+        when(jwtUtil.generateToken(anyString(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("tok");
+        when(jwtUtil.generateRefreshToken(anyString(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("ref");
 
         LoginResponse response = authService.signup(request, null);
 
@@ -415,6 +423,8 @@ class AuthServiceTest {
     void verifyToken_validToken_returnsTrue() {
         when(jwtUtil.validateToken("valid-token")).thenReturn(true);
         when(jwtUtil.isAccessToken("valid-token")).thenReturn(true);
+        when(jwtUtil.extractUsername("valid-token")).thenReturn("admin");
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(testUser));
         assertThat(authService.verifyToken("valid-token")).isTrue();
     }
 
@@ -425,12 +435,24 @@ class AuthServiceTest {
     }
 
     @Test
+    void passwordVersionChangeRejectsOldAccessAndRefreshTokens() {
+        testUser.setSessionVersion(1);
+        when(jwtUtil.validateToken("old")).thenReturn(true);
+        when(jwtUtil.isAccessToken("old")).thenReturn(true);
+        when(jwtUtil.isRefreshToken("old")).thenReturn(true);
+        when(jwtUtil.extractUsername("old")).thenReturn("admin");
+        when(userRepository.findByUsername("admin")).thenReturn(Optional.of(testUser));
+        assertThat(authService.verifyToken("old")).isFalse();
+        assertThatThrownBy(() -> authService.refreshToken("old")).isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
     void refreshToken_validRefreshToken_returnsNewAccessToken() {
         when(jwtUtil.validateToken("valid-refresh-token")).thenReturn(true);
         when(jwtUtil.isRefreshToken("valid-refresh-token")).thenReturn(true);
         when(jwtUtil.extractUsername("valid-refresh-token")).thenReturn("admin");
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(testUser));
-        when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any())).thenReturn("new-access-token");
+        when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any(), org.mockito.ArgumentMatchers.anyLong())).thenReturn("new-access-token");
 
         String newToken = authService.refreshToken("valid-refresh-token");
 

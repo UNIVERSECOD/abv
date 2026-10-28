@@ -42,6 +42,14 @@ class JwtUtilTest {
     }
 
     @Test
+    void sessionVersionSurvivesBothTokenRoundTrips() {
+        String access = jwtUtil.generateToken("admin", UserType.HEAD_OFFICE_HR, 3L, 7L, 9L);
+        String refresh = jwtUtil.generateRefreshToken("admin", 9L);
+        assertThat(jwtUtil.extractSessionVersion(access)).isEqualTo(9L);
+        assertThat(jwtUtil.extractSessionVersion(refresh)).isEqualTo(9L);
+    }
+
+    @Test
     void generatedRefreshTokenCannotAuthenticateApiRequests() {
         String token = jwtUtil.generateRefreshToken("admin");
 

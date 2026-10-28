@@ -34,6 +34,7 @@ public class DeviceController {
     private final HikDeviceUserImportService hikDeviceUserImportService;
     private final DoorAttendanceSyncService doorAttendanceSyncService;
     private final EncryptionUtil encryptionUtil;
+    private final com.hic.repository.BranchRepository branchRepository;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<DeviceSyncDTO.DeviceConfigDTO>>> getAll() {
@@ -71,8 +72,7 @@ public class DeviceController {
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceConfigDTO>> update(
             @PathVariable Long id,
             @RequestBody DeviceSyncDTO.DeviceUpsertRequest req) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         DeviceSyncDTO.DeviceConfigDTO dto = toConfigDTO(req);
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateDevice(
                 toIsapiId(backendDevice.getDeviceId()), dto);
@@ -82,8 +82,7 @@ public class DeviceController {
 
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         try {
             deviceSyncService.deleteDevice(toIsapiId(backendDevice.getDeviceId()));
         } catch (Exception e) {
@@ -97,8 +96,7 @@ public class DeviceController {
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceConfigDTO>> updateEnabled(
             @PathVariable Long id,
             @RequestBody DeviceSyncDTO.DeviceEnabledDTO dto) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateEnabled(
                 toIsapiId(backendDevice.getDeviceId()), dto);
         backendDevice.setStatus(isapiResult.getStatus());
@@ -110,32 +108,28 @@ public class DeviceController {
 
     @PostMapping("/{id}/start")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceRuntimeDTO>> start(@PathVariable Long id) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         return ResponseEntity.ok(ApiResponse.success(
                 deviceSyncService.startDevice(toIsapiId(backendDevice.getDeviceId()))));
     }
 
     @PostMapping("/{id}/stop")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceRuntimeDTO>> stop(@PathVariable Long id) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         return ResponseEntity.ok(ApiResponse.success(
                 deviceSyncService.stopDevice(toIsapiId(backendDevice.getDeviceId()))));
     }
 
     @GetMapping("/{id}/status")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceStatusDTO>> status(@PathVariable Long id) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         return ResponseEntity.ok(ApiResponse.success(
                 deviceSyncService.getStatus(toIsapiId(backendDevice.getDeviceId()))));
     }
 
     @PostMapping("/{id}/sync")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.SyncResultDTO>> sync(@PathVariable Long id) {
-        DeviceConfig backendDevice = deviceConfigRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         DeviceSyncDTO.SyncResultDTO result = deviceSyncService.syncDevice(toIsapiId(backendDevice.getDeviceId()));
         if (result != null && result.isSuccess()) {
             LocalDateTime end = com.hic.util.AppTimeZone.now();
@@ -168,6 +162,11 @@ public class DeviceController {
     }
 
     private DeviceSyncDTO.DeviceConfigDTO toConfigDTO(DeviceSyncDTO.DeviceUpsertRequest req) {
+        if (req.getBranchId() != null) {
+            branchRepository.findById(req.getBranchId())
+                    .filter(branch -> branch.getTenantId().equals(TenantContext.getTenantId()))
+                    .orElseThrow(() -> new ResourceNotFoundException("Branch", req.getBranchId()));
+        }
         DeviceSyncDTO.DeviceConfigDTO dto = new DeviceSyncDTO.DeviceConfigDTO();
         dto.setDeviceIp(req.getIp());
         dto.setUsername(req.getUsername());
@@ -239,5 +238,15 @@ public class DeviceController {
         } catch (NumberFormatException e) {
             throw new BadRequestException("Invalid deviceId format: " + deviceId);
         }
+    }
+
+    private DeviceConfig requireOwnedDevice(Long id) {
+        DeviceConfig device = deviceConfigRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null || !tenantId.equals(device.getTenantId())) {
+            throw new ResourceNotFoundException("DeviceConfig", id);
+        }
+        return device;
     }
 }

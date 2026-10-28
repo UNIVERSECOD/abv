@@ -8,7 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
-public interface AcsRawEventRepository extends JpaRepository<AcsRawEventEntity, Long> {
+public interface AcsRawEventRepository extends JpaRepository<AcsRawEventEntity, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<AcsRawEventEntity> {
 
     boolean existsByDeviceIdAndSerialNo(Long deviceId, Long serialNo);
 

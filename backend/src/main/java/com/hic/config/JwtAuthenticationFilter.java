@@ -62,6 +62,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             userRepository.findByUsername(username)
                     .filter(user -> !user.isPasswordSetupRequired())
+                    .filter(user -> user.getTenantId() != null)
+                    .filter(user -> jwtUtil.extractSessionVersion(token) == user.getSessionVersion())
                     .ifPresent(user -> {
                         String role = "ROLE_" + user.getUserType().name();
                         var authToken = new UsernamePasswordAuthenticationToken(

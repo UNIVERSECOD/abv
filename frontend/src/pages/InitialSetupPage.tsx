@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isAxiosError } from 'axios'
 import { useNavigate } from 'react-router-dom'
 import { authApi } from '../api/authApi.ts'
 import AttendraBrand from '../components/AttendraBrand.tsx'
@@ -14,6 +15,8 @@ const INPUT_CLS =
 
 export default function InitialSetupPage() {
   const [username, setUsername] = useState('admin')
+  const [setupToken, setSetupToken] = useState('')
+  const [tokenError, setTokenError] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
@@ -59,6 +62,12 @@ export default function InitialSetupPage() {
       setError(t('signup.passwordMinLength'))
       return
     }
+
+    if (!setupToken.trim()) {
+      setTokenError('Quraşdırma kodunu daxil edin')
+      return
+    }
+    setTokenError('')
     if (!/\d/.test(password)) {
       setError(t('signup.passwordNeedsDigit'))
       return
@@ -70,11 +79,16 @@ export default function InitialSetupPage() {
 
     setSubmitting(true)
     try {
-      const { data } = await authApi.completeInitialSetup(password, confirmPassword)
+      const { data } = await authApi.completeInitialSetup(password, confirmPassword, setupToken.trim())
       setAuth(data.token, data.user)
       navigate('/', { replace: true })
     } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError, t('initialSetup.setupFailed')))
+      const message = getApiErrorMessage(requestError, t('initialSetup.setupFailed'))
+      if (isAxiosError(requestError) && requestError.response?.status === 401) {
+        setTokenError(message)
+      } else {
+        setError(message)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -117,6 +131,14 @@ export default function InitialSetupPage() {
             </button>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label htmlFor="setup-token" className="block text-sm font-semibold text-gray-700 mb-1.5">Quraşdırma kodu</label>
+                <input id="setup-token" type="password" value={setupToken}
+                  onChange={(event) => { setSetupToken(event.target.value); setTokenError('') }}
+                  autoComplete="off" maxLength={256} required className={INPUT_CLS} />
+                <p className="text-xs text-gray-500 mt-1.5">Kodu proqramı quraşdıran sistem administratorundan alın.</p>
+                {tokenError && <p className="text-xs text-red-600 mt-1" role="alert">{tokenError}</p>}
+              </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-1.5">
                   {t('initialSetup.username')}

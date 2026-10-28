@@ -42,3 +42,4 @@ runtime/audit/
 runtime/backup-operations/
 runtime/backup-host.lock
 runtime/device-removal-paused.json
+runtime/initial-setup-token

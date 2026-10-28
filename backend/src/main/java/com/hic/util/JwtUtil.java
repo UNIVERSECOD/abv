@@ -39,7 +39,12 @@ public class JwtUtil {
     }
 
     public String generateToken(String username, UserType userType, Long tenantId, Long userId) {
+        return generateToken(username, userType, tenantId, userId, 0);
+    }
+
+    public String generateToken(String username, UserType userType, Long tenantId, Long userId, long sessionVersion) {
         Map<String, Object> claims = new HashMap<>();
+        claims.put("sessionVersion", sessionVersion);
         claims.put(TOKEN_TYPE_CLAIM, ACCESS_TOKEN_TYPE);
         claims.put("userType", userType.name());
         if (tenantId != null) {
@@ -52,7 +57,12 @@ public class JwtUtil {
     }
 
     public String generateRefreshToken(String username) {
+        return generateRefreshToken(username, 0);
+    }
+
+    public String generateRefreshToken(String username, long sessionVersion) {
         Map<String, Object> claims = new HashMap<>();
+        claims.put("sessionVersion", sessionVersion);
         claims.put(TOKEN_TYPE_CLAIM, REFRESH_TOKEN_TYPE);
         return buildToken(claims, username, refreshExpiration);
     }
@@ -151,5 +161,11 @@ public class JwtUtil {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+    }
+
+    public long extractSessionVersion(String token) {
+        Number version = extractClaims(token).get("sessionVersion", Number.class);
+        // Previously issued sessions survive upgrade until the first password change.
+        return version == null ? 0 : version.longValue();
     }
 }

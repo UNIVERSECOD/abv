@@ -39,6 +39,9 @@ public class User {
     @Column(name = "password_setup_required", nullable = false)
     private boolean passwordSetupRequired;
 
+    @Column(name = "session_version", nullable = false)
+    private long sessionVersion;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "user_type", nullable = false)
     private UserType userType;

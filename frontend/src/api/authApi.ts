@@ -4,8 +4,8 @@ import { InitialSetupStatus, LoginResponse } from '../types'
 export const authApi = {
   getInitialSetupStatus: () =>
     client.get<InitialSetupStatus>('/auth/initial-setup'),
-  completeInitialSetup: (password: string, confirmPassword: string) =>
-    client.post<LoginResponse>('/auth/initial-setup', { password, confirmPassword }),
+  completeInitialSetup: (password: string, confirmPassword: string, setupToken: string) =>
+    client.post<LoginResponse>('/auth/initial-setup', { password, confirmPassword, setupToken }),
   changePassword: (currentPassword: string, newPassword: string, confirmPassword: string) =>
     client.put('/auth/password', { currentPassword, newPassword, confirmPassword }),
   login: (username: string, password: string) =>

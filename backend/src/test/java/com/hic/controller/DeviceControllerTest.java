@@ -42,7 +42,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         controllers = DeviceController.class,
         excludeAutoConfiguration = {SecurityAutoConfiguration.class, UserDetailsServiceAutoConfiguration.class}
 )
+@org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc(addFilters = false)
 class DeviceControllerTest {
+
+    @org.junit.jupiter.api.BeforeEach
+    void tenantContext() { com.hic.util.TenantContext.setTenantId(1L); }
+
+    @org.junit.jupiter.api.AfterEach
+    void clearTenant() { com.hic.util.TenantContext.clear(); }
 
     @Autowired
     private MockMvc mockMvc;
@@ -66,6 +73,9 @@ class DeviceControllerTest {
     private EncryptionUtil encryptionUtil;
 
     @MockBean
+    private com.hic.repository.BranchRepository branchRepository;
+
+    @MockBean
     private JwtUtil jwtUtil;
 
     @MockBean
@@ -74,10 +84,36 @@ class DeviceControllerTest {
     private DeviceConfig backendDevice() {
         DeviceConfig device = new DeviceConfig();
         device.setId(1L);
+        device.setTenantId(1L);
         device.setDeviceId("10");
         device.setDeviceName("Front Door");
         device.setStatus("ACTIVE");
         return device;
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"start", "stop", "sync"})
+    void foreignDevicePostIsRejectedBeforeBridge(String operation) throws Exception {
+        DeviceConfig foreign = backendDevice();
+        foreign.setTenantId(2L);
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(foreign));
+        mockMvc.perform(post("/api/devices/1/" + operation)).andExpect(status().isNotFound());
+        org.mockito.Mockito.verifyNoInteractions(deviceSyncService, doorAttendanceSyncService);
+        verify(deviceConfigRepository, never()).save(any());
+    }
+
+    @Test
+    void foreignDeviceUpdateAndDeleteCannotMutateEitherSystem() throws Exception {
+        DeviceConfig foreign = backendDevice();
+        foreign.setTenantId(2L);
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(foreign));
+        mockMvc.perform(put("/api/devices/1").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/devices/1"))
+                .andExpect(status().isNotFound());
+        org.mockito.Mockito.verifyNoInteractions(deviceSyncService);
+        verify(deviceConfigRepository, never()).save(any());
+        verify(deviceConfigRepository, never()).deleteById(any());
     }
 
     private DeviceSyncDTO.DeviceConfigDTO deviceConfigDto() {

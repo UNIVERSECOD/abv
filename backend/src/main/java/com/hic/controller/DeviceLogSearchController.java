@@ -70,6 +70,8 @@ public class DeviceLogSearchController {
             );
             return ResponseEntity.ok(ApiResponse.success(result));
 
+        } catch (com.hic.exception.BadRequestException e) {
+            return ResponseEntity.badRequest().build();
         } catch (ResourceNotFoundException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiResponse.error("Device not found: " + e.getMessage()));
@@ -129,10 +131,12 @@ public class DeviceLogSearchController {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.IMAGE_JPEG);
             headers.setContentLength(imageBytes.length);
-            headers.setCacheControl("max-age=300");
+            headers.setCacheControl("no-store");
 
             return ResponseEntity.ok().headers(headers).body(imageBytes);
 
+        } catch (com.hic.exception.BadRequestException e) {
+            return ResponseEntity.badRequest().build();
         } catch (ResourceNotFoundException e) {
             log.warn("Device not found for picture proxy: deviceId={}", deviceId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).build();

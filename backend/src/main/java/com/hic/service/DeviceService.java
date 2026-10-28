@@ -72,6 +72,9 @@ public class DeviceService {
                     syncedCount++;
                     log.info("Created new device: {} ({})", isapiDevice.getDeviceName(), isapiDevice.getDeviceId());
                 } else {
+                    if (tenantId != null && existing.getTenantId() != null && !tenantId.equals(existing.getTenantId())) {
+                        continue;
+                    }
                     existing.setDeviceName(isapiDevice.getDeviceName());
                     existing.setDeviceIp(isapiDevice.getDeviceIp());
                     existing.setUsername(isapiDevice.getUsername());

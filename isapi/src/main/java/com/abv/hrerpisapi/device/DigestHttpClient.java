@@ -90,6 +90,7 @@ public class DigestHttpClient {
      */
     public HttpResponse<byte[]> getBytesFromResourceUrl(String resourceUrl) throws IOException, InterruptedException {
         ParsedResource resource = parseResourceUrl(resourceUrl, baseUrl);
+        requireSameOrigin(resource.baseUrl(), baseUrl);
         DigestHttpClient hostClient = new DigestHttpClient(resource.baseUrl(), username, password);
 
         IOException lastError = null;
@@ -260,6 +261,23 @@ public class DigestHttpClient {
     }
 
     record ParsedResource(String baseUrl, String path) {
+    }
+
+    public static void requireSameOrigin(String resourceUrl, String configuredUrl) throws IOException {
+        try {
+            URI resource = URI.create(resourceUrl);
+            URI configured = URI.create(configuredUrl);
+            int resourcePort = resource.getPort() < 0 ? ("https".equalsIgnoreCase(resource.getScheme()) ? 443 : 80) : resource.getPort();
+            int configuredPort = configured.getPort() < 0 ? ("https".equalsIgnoreCase(configured.getScheme()) ? 443 : 80) : configured.getPort();
+            if (resource.getRawUserInfo() != null || resource.getHost() == null
+                    || !("http".equalsIgnoreCase(resource.getScheme()) || "https".equalsIgnoreCase(resource.getScheme()))
+                    || !resource.getHost().equalsIgnoreCase(configured.getHost())
+                    || !resource.getScheme().equalsIgnoreCase(configured.getScheme()) || resourcePort != configuredPort) {
+                throw new IOException("Picture origin does not match the configured device");
+            }
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("Invalid picture origin", ex);
+        }
     }
 
     private String buildDigestAuthorization(DigestChallenge ch, String method, String uriPath) throws IOException {

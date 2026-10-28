@@ -28,13 +28,18 @@ public class IsapiProxyService {
     private static final List<String> EXCLUDED_RESPONSE_HEADERS = List.of("transfer-encoding", "content-length", "connection", "keep-alive");
 
     private final RestTemplate restTemplate;
+    private final com.hic.repository.DeviceConfigRepository devices;
+    private final com.hic.repository.TenantRepository tenants;
 
     @Value("${isapi.base-url}")
     private String isapiBaseUrl;
 
     public ResponseEntity<String> forward(HttpMethod method, String path, HttpServletRequest request, String body) {
+        String scope = requireDeviceScope(path, request);
         String targetUrl = buildTargetUrl(path, request);
-        HttpEntity<String> entity = new HttpEntity<>(body, buildForwardHeaders(request));
+        HttpHeaders headers = buildForwardHeaders(request);
+        headers.set("X-Allowed-Device-Ids", scope);
+        HttpEntity<String> entity = new HttpEntity<>(body, headers);
 
         try {
             ResponseEntity<String> upstream = restTemplate.exchange(targetUrl, method, entity, String.class);
@@ -51,6 +56,7 @@ public class IsapiProxyService {
     }
 
     public ResponseEntity<String> forwardMultipart(String path, MultipartHttpServletRequest request) {
+        String scope = requireDeviceScope(path, request);
         String targetUrl = buildTargetUrl(path, request);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
 
@@ -69,6 +75,7 @@ public class IsapiProxyService {
         });
 
         HttpHeaders headers = buildForwardHeaders(request);
+        headers.set("X-Allowed-Device-Ids", scope);
         headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
         try {
@@ -94,12 +101,44 @@ public class IsapiProxyService {
         return UriComponentsBuilder.fromHttpUrl(baseUrl).query(queryString).toUriString();
     }
 
+    private String requireDeviceScope(String path, HttpServletRequest request) {
+        Long tenantId = com.hic.util.TenantContext.getTenantId();
+        if (tenantId == null) throw new com.hic.exception.UnauthorizedException("Şirkət konteksti müəyyən edilmədi");
+        // The bridge's legacy device_users cache is global, not tenant-owned.
+        // Keep it available for the supported single-company installation only.
+        if (path.startsWith("/api/devices/") && path.contains("/users") && tenants.count() != 1) {
+            throw new com.hic.exception.BadRequestException("Çoxşirkətli quraşdırmada ümumi cihaz istifadəçi keşi bağlıdır");
+        }
+        List<String> allowed = devices.findByTenantId(tenantId).stream()
+                .map(com.hic.model.DeviceConfig::getDeviceId)
+                .filter(id -> id != null && id.matches("[0-9]+"))
+                .map(id -> Long.toString(Long.parseLong(id))).distinct().toList();
+        String selected = null;
+        if (path.startsWith("/api/devices/")) selected = path.substring("/api/devices/".length()).split("/")[0];
+        String[] values = request.getParameterValues("deviceId");
+        if (values != null) {
+            if (values.length != 1) throw new com.hic.exception.BadRequestException("Yalnız bir cihaz seçilə bilər");
+            if (selected != null && !selected.equals(values[0])) throw new com.hic.exception.BadRequestException("Cihaz identifikatorları uyğun deyil");
+            selected = values[0];
+        }
+        if (selected != null) {
+            try { selected = Long.toString(Long.parseLong(selected)); }
+            catch (NumberFormatException invalid) { throw new com.hic.exception.BadRequestException("Cihaz identifikatoru yanlışdır"); }
+            if (!allowed.contains(selected)) throw new com.hic.exception.BadRequestException("Cihaz şirkətə aid deyil");
+        } else if (path.startsWith("/api/acs-events/")) {
+            throw new com.hic.exception.BadRequestException("Cihaz seçilməlidir");
+        }
+        return allowed.isEmpty() ? "-1" : String.join(",", allowed);
+    }
+
     private HttpHeaders buildForwardHeaders(HttpServletRequest request) {
         HttpHeaders headers = new HttpHeaders();
         Enumeration<String> names = request.getHeaderNames();
         while (names != null && names.hasMoreElements()) {
             String name = names.nextElement();
-            if ("host".equalsIgnoreCase(name) || "content-length".equalsIgnoreCase(name)) {
+            if ("host".equalsIgnoreCase(name) || "content-length".equalsIgnoreCase(name)
+                    || "X-Allowed-Device-Ids".equalsIgnoreCase(name) || "X-API-Key".equalsIgnoreCase(name)
+                    || "Authorization".equalsIgnoreCase(name) || "Cookie".equalsIgnoreCase(name)) {
                 continue;
             }
             Enumeration<String> values = request.getHeaders(name);

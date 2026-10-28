@@ -64,7 +64,7 @@ services:
       APP_RUNTIME_DIR: /app/runtime
       TZ: Asia/Baku
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
       - face_images:/app/uploads/faces
       - ./runtime:/app/runtime

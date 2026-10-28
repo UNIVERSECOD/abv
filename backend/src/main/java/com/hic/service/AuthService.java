@@ -29,6 +29,7 @@ public class AuthService {
     private final TenantRepository tenantRepository;
     private final JwtUtil jwtUtil;
     private final PasswordUtil passwordUtil;
+    private final InitialSetupGuard initialSetupGuard;
 
     /**
      * Role hierarchy: HEAD_OFFICE_HR > OFFICE_HR > DEPARTMENT_HR > EMPLOYEE.
@@ -74,6 +75,7 @@ public class AuthService {
             if (targetRole != User.UserType.HEAD_OFFICE_HR) {
                 throw new BadRequestException("First account must use role HEAD_OFFICE_HR");
             }
+            initialSetupGuard.verify(request.getSetupToken());
         } else if (roleRank(callerRole) >= roleRank(targetRole)) {
             throw new BadRequestException(
                     "You cannot create an account with role " + targetRole + " as your own role is " + callerRole);
@@ -89,7 +91,11 @@ public class AuthService {
         user.setLastName(request.getLastName());
         user.setPasswordHash(passwordUtil.hashPassword(request.getPassword()));
         user.setUserType(targetRole);
-        user.setTenantId(defaultTenant.getId());
+        Long tenantId = callerRole == null ? defaultTenant.getId() : com.hic.util.TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new UnauthorizedException("Şirkət konteksti müəyyən edilmədi");
+        }
+        user.setTenantId(tenantId);
         userRepository.save(user);
 
         return createLoginResponse(user);
@@ -136,11 +142,14 @@ public class AuthService {
             throw new BadRequestException("İlkin administrator quraşdırması artıq tamamlanıb");
         }
 
+        initialSetupGuard.verify(request.getSetupToken());
+
         if (passwordUtil.verifyPassword(request.getPassword(), admin.getPasswordHash())) {
             throw new BadRequestException("Yeni şifrə standart şifrədən fərqli olmalıdır");
         }
 
         admin.setPasswordHash(passwordUtil.hashPassword(request.getPassword()));
+        admin.setSessionVersion(admin.getSessionVersion() + 1);
         admin.setPasswordSetupRequired(false);
         userRepository.save(admin);
 
@@ -164,11 +173,17 @@ public class AuthService {
         }
 
         user.setPasswordHash(passwordUtil.hashPassword(request.getNewPassword()));
+        user.setSessionVersion(user.getSessionVersion() + 1);
         userRepository.save(user);
     }
 
     public boolean verifyToken(String token) {
-        return jwtUtil.validateToken(token) && jwtUtil.isAccessToken(token);
+        try {
+            getUserFromToken(token);
+            return true;
+        } catch (RuntimeException invalidSession) {
+            return false;
+        }
     }
 
     public String refreshToken(String refreshToken) {
@@ -178,7 +193,10 @@ public class AuthService {
         String username = jwtUtil.extractUsername(refreshToken);
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
-        return jwtUtil.generateToken(user.getUsername(), user.getUserType(), user.getTenantId(), user.getId());
+        if (user.isPasswordSetupRequired() || jwtUtil.extractSessionVersion(refreshToken) != user.getSessionVersion()) {
+            throw new UnauthorizedException("Sessiya bitib. Yenidən daxil olun");
+        }
+        return jwtUtil.generateToken(user.getUsername(), user.getUserType(), user.getTenantId(), user.getId(), user.getSessionVersion());
     }
 
     public UserDTO getUserFromToken(String token) {
@@ -188,12 +206,15 @@ public class AuthService {
         String username = jwtUtil.extractUsername(token);
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
+        if (user.isPasswordSetupRequired() || jwtUtil.extractSessionVersion(token) != user.getSessionVersion()) {
+            throw new UnauthorizedException("Sessiya bitib. Yenidən daxil olun");
+        }
         return toDTO(user);
     }
 
     private LoginResponse createLoginResponse(User user) {
-        String token = jwtUtil.generateToken(user.getUsername(), user.getUserType(), user.getTenantId(), user.getId());
-        String refreshToken = jwtUtil.generateRefreshToken(user.getUsername());
+        String token = jwtUtil.generateToken(user.getUsername(), user.getUserType(), user.getTenantId(), user.getId(), user.getSessionVersion());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getUsername(), user.getSessionVersion());
         return new LoginResponse(token, refreshToken, toDTO(user));
     }
 

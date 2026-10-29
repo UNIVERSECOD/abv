@@ -1,3 +1,7 @@
+# ABV variant (2026-10-29)
+
+Copied from main 2905751 to UNIVERSECOD/abv. Read ../README_ABV.md for this variant and Ubuntu startup. Tabel UI now requests STANDARD and displays whole daily hours; minutes 00–30 round down, 31–59 round up. Monthly totals sum the rounded days. API/Excel agree; stored summaries, migrations, devices and other reports are untouched. Historical handoff below describes the upstream project.
+
 # Codex Project Handoff
 
 Combined-device audit (2026-10-29): daytime BOTH review corrected bridge/backend-ID confusion in journal mapping and tenant filtering, terminal-number/HR-code name collisions, and combined midnight expiry in report inference/dashboard presence. Invalid bridge mappings now skip attendance sync. Existing first/last, manual override, role/area history, flexible exclusions, paid-time and Overtime policies remain. No migration or customer recalculation. Verification: 181 focused / 620 full backend tests, backend package/image, 57 frontend tests plus lint/build, 35 ISAPI Maven tests, Compose config and 37 isolated API/Excel checks passed; synthetic browser daily report agreed. Customer Docker was not redeployed; no physical-device test/write. See [COMBINED_DEVICE_AUDIT_2026-10-29.md](COMBINED_DEVICE_AUDIT_2026-10-29.md).

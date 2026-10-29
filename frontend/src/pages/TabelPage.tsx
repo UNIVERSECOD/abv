@@ -13,14 +13,6 @@ import { toast } from '../store/toastStore.ts'
 const SIDEBAR_OPEN = 'w-full lg:w-64'
 const SIDEBAR_CLOSED = 'w-10'
 
-function workedDuration(minutes: number) {
-  return `${Math.floor(minutes / 60)} saat ${minutes % 60} dəqiqə`
-}
-
-function workedTime(minutes: number) {
-  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
-}
-
 const monthOptions = [
   'Yanvar',
   'Fevral',
@@ -53,7 +45,7 @@ export default function TabelPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const debouncedSearch = useDebounce(search, 300)
   const filters = useMemo(() => ({
-    mode: 'MCG' as const,
+    mode: 'STANDARD' as const,
     year,
     month,
     branchId: branchId === '' ? undefined : branchId,
@@ -128,10 +120,10 @@ export default function TabelPage() {
       const href = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = href
-      anchor.download = `attendra-mcg-tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
+      anchor.download = `abv-tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
       anchor.click()
       URL.revokeObjectURL(href)
-      toast.success('MCG Tabel Excel faylı hazırlandı')
+      toast.success('ABV Tabel Excel faylı hazırlandı')
     } catch {
       toast.error('Excel faylı hazırlanmadı', 'Bir qədər sonra təkrar yoxlayın.')
     } finally {
@@ -206,8 +198,8 @@ export default function TabelPage() {
           <section className="flex-1 min-w-0 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
-                <p className="mt-1 text-sm text-slate-500">Normanı ödəyən gün — 1; digər günlər — saat:dəqiqə; istirahət günü — Q/İ; təsdiqlənmiş məzuniyyət — növün qısaltması. Overtime qrafik bitdikdən sonra 1 saat tamam olduqda hesablanır.</p>
+                <h1 className="text-2xl font-bold text-slate-900">ABV — Standart tabel</h1>
+                <p className="mt-1 text-sm text-slate-500">İşlənmiş vaxt tam saata yuvarlaqlaşdırılır: 00–30 dəqiqə aşağı, 31–59 dəqiqə yuxarı (07:20 → 7, 07:31 → 8). Aylıq cəm gündəlik yuvarlaq saatların cəmidir.</p>
               </div>
               <button onClick={handleExport} disabled={!data || exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                 {t('reports.excelExport')}
@@ -259,16 +251,15 @@ export default function TabelPage() {
                     {Array.from({ length: data?.daysInMonth ?? 0 }, (_, day) => (
                       <th key={day + 1} className="sticky top-0 min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
                     ))}
-                    <th className="sticky top-0 min-w-[120px] border-b bg-slate-50 px-3 py-3 text-center">Overtime (saat)</th>
                     <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş günlərinin sayı</th>
                     <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş saatlarının cəmi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 7} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 6} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
                   ) : (data?.rows.length ?? 0) === 0 ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 7} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 6} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
                   ) : data?.rows.map((row, index) => (
                     <tr key={row.employeePk} className="border-b border-slate-100 text-slate-700">
                       <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
@@ -284,27 +275,11 @@ export default function TabelPage() {
                         const value = row.daily[String(day + 1)]
                         const isCode = typeof value === 'string'
                         const isEmpty = value === null || value === undefined
-                        const mcgDay = row.mcgDaily?.[String(day + 1)]
-                        const unresolved = mcgDay?.status === 'OPEN_SESSION' || mcgDay?.status === 'MISSING_EXIT'
-                        const detail = mcgDay && !isEmpty && !isCode
-                        const color = typeof value === 'string' && Object.prototype.hasOwnProperty.call(data.leaveLegend ?? {}, value) ? 'font-semibold text-purple-700' : !detail ? 'text-black'
-                          : mcgDay.overtimeMinutes > 0 ? 'font-semibold text-blue-600'
-                            : mcgDay.fullDay ? 'font-semibold text-emerald-700'
-                              : mcgDay.sourceVerified && mcgDay.workedMinutes > 0 && mcgDay.workedMinutes < mcgDay.expectedMinutes
-                                ? 'font-semibold text-red-600' : 'text-black'
-
-                        return (
-                          <td key={day + 1}
-                            title={detail ? `Hesablanan: ${workedDuration(mcgDay.workedMinutes)}; icazə krediti: ${workedDuration(mcgDay.creditedPermissionMinutes)}${unresolved ? '; çıxış qeydi çatışmır' : ''}${!mcgDay.sourceVerified ? '; giriş–çıxış qeydləri yoxdur' : ''}` : undefined}
-                            className={`px-2 py-2 text-center ${color}`}>
-                            {detail ? mcgDay.fullDay ? 1 : mcgDay.workedMinutes === 0 ? 0 : workedTime(mcgDay.workedMinutes)
-                              : typeof value === 'number' ? value === 0 ? 0 : workedTime(Math.round(value * 60)) : isEmpty ? 0 : value}
-                          </td>
-                        )
+                        const color = isCode && Object.prototype.hasOwnProperty.call(data.leaveLegend ?? {}, value) ? 'font-semibold text-purple-700' : 'text-black'
+                        return <td key={day + 1} className={`px-2 py-2 text-center ${color}`}>{isEmpty ? '' : value}</td>
                       })}
-                      <td className={`px-3 py-2 text-center font-medium ${(row.overtimeHours ?? 0) > 0 ? 'text-blue-600' : 'text-black'}`}>{workedTime(Math.round((row.overtimeHours ?? 0) * 60))}</td>
                       <td className="px-3 py-2 text-center font-medium">{row.workingDays}</td>
-                      <td className="px-3 py-2 text-center font-medium">{workedTime(Math.round(row.totalHours * 60))}</td>
+                      <td className="px-3 py-2 text-center font-medium">{row.totalHours}</td>
                     </tr>
                   ))}
                 </tbody>

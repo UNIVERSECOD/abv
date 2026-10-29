@@ -71,6 +71,41 @@ class TabelServiceTest {
     }
 
     @Test
+    void standardRoundsDailyMinutesAndExportsTheSumWithoutChangingStoredHours() throws Exception {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        int[] minutes = {440, 450, 451, 479, 480, 29, 30, 31};
+        double[] expected = {7, 7, 8, 8, 8, 0, 0, 1};
+        var summaries = new java.util.ArrayList<DailyAttendanceSummary>();
+        for (int i = 0; i < minutes.length; i++) {
+            var summary = new DailyAttendanceSummary();
+            summary.setAttendanceDate(LocalDate.of(2026, 4, i + 1));
+            summary.setHoursWorked(minutes[i] / 60.0);
+            summaries.add(summary);
+        }
+        when(dailyAttendanceSummaryRepository.findByEmployeeIdAndAttendanceDateBetween(any(), any(), any()))
+                .thenReturn(summaries);
+        when(attendanceScheduleResolver.resolve(any(), any())).thenReturn(
+                new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", false, null, null, 0, 0, 0));
+        var row = tabelService.getMonthlyTabel(2026, 4, null, null, null, null).getRows().get(0);
+        assertEquals(39.0, row.getTotalHours());
+        assertEquals(8, row.getWorkingDays());
+        assertNull(row.getDaily().get(9));
+        try (var book = WorkbookFactory.create(new ByteArrayInputStream(
+                tabelService.exportMonthlyTabel(2026, 4, null, null, null, null)))) {
+            var excel = book.getSheetAt(0).getRow(2);
+            for (int i = 0; i < minutes.length; i++) {
+                assertEquals(expected[i], row.getDaily().get(i + 1));
+                assertEquals(expected[i], excel.getCell(i + 4).getNumericCellValue());
+                assertEquals(minutes[i] / 60.0, summaries.get(i).getHoursWorked());
+            }
+            assertEquals(39.0, excel.getCell(35).getNumericCellValue());
+        }
+        org.mockito.Mockito.verifyNoInteractions(mcgProjectionService);
+    }
+
+    @Test
     void vacationOverridesRestDaysAcrossMonthBoundaryAndExportsMWithoutAddingWork() throws Exception {
         TenantContext.setTenantId(7L);
         var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
@@ -211,13 +246,13 @@ class TabelServiceTest {
         assertEquals("Mütəxəssis", row.getPosition());
         assertEquals(0, row.getDaily().get(1));
         assertEquals(9.0, row.getDaily().get(3));
-        assertEquals(8.5, row.getDaily().get(4));
+        assertEquals(8.0, row.getDaily().get(4));
         assertEquals("M", row.getDaily().get(5));
         assertEquals("Q/I", row.getDaily().get(6));
         assertEquals("Q/I", row.getDaily().get(7));
         assertNull(row.getDaily().get(11));
         assertEquals(2, row.getWorkingDays());
-        assertEquals(17.5, row.getTotalHours());
+        assertEquals(17.0, row.getTotalHours());
         assertEquals(TabelMonthlyDTO.CalculationMode.STANDARD, result.getCalculationMode());
         org.mockito.Mockito.verifyNoInteractions(mcgProjectionService);
         try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(

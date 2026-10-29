@@ -1,3 +1,7 @@
+# Attendra ABV
+
+Bu repository ABV variantıdır. Standart Tabel və Ubuntu quraşdırması üçün [README_ABV.md](README_ABV.md) faylını oxuyun. Aşağıdakı tarixçə əsas Attendra layihəsindən saxlanıb.
+
 # HR ERP System - Azerbaijan (Monorepo)
 
 A complete HR ERP system with face-recognition device integration, built as a monorepo containing:

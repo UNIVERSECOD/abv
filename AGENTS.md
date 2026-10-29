@@ -65,7 +65,11 @@ Do not claim Docker, backend, ISAPI, or physical-device verification when the re
 
 ## Git Delivery
 
-- Target repository: `https://github.com/UNIVERSECOD/hr_erp_attendra.git`.
+- Target repository: `https://github.com/UNIVERSECOD/abv.git`.
 - Use author `UNIVERSECOD <leylaha@code.edu.az>` for requested delivery commits.
 - Do not stage unrelated files or local secrets.
 - The user currently expects completed, verified changes to be pushed to `main`.
+
+## ABV Variant
+
+Read README_ABV.md. The Tabel UI uses STANDARD only, rounds daily worked minutes down at 00–30 and up at 31–59, and sums displayed daily hours. Preserve raw summaries and other attendance reports. This repository is separate from the original Attendra repository.

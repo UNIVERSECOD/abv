@@ -171,7 +171,9 @@ public class TabelService {
                         else partialMinutes += mcgDay.regularMinutes();
                     }
                     if (hours > 0) {
-                        double normalized = round2(hours);
+                        // ABV rounds each standard day; monthly totals sum the displayed days.
+                        long minutes = Math.round(hours * 60.0d);
+                        double normalized = mcg ? round2(hours) : minutes / 60 + (minutes % 60 > 30 ? 1 : 0);
                         value = normalized;
                         workingDays++;
                         totalHours += normalized;

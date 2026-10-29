@@ -56,6 +56,20 @@ class CombinedDeviceAttendanceServiceTest {
         assertThat(stored.get(0).getStatus()).isEqualTo("MISSING_EXIT");
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10})
+    void scanOrderingAndReplayKeepSameCalendarDayExtrema(int seed) {
+        var punches = new ArrayList<AttendanceLogEntryDTO>();
+        punches.add(punch(1, 101, 8, 0)); punches.add(punch(2, 102, 12, 0));
+        punches.add(punch(3, 103, 18, 0)); punches.add(punch(4, 104, 8, 0));
+        java.util.Collections.shuffle(punches, new java.util.Random(seed));
+        punches.forEach(p -> service.accept(1L, employee, 10L, p));
+        assertThat(stored).hasSize(1);
+        assertThat(stored.get(0).getCheckInTime()).isEqualTo(day.atTime(8, 0));
+        assertThat(stored.get(0).getCheckOutTime()).isEqualTo(day.atTime(18, 0));
+        punches.forEach(p -> assertThat(service.accept(1L, employee, 10L, p).changed()).isFalse());
+    }
+
     @Test void sixDevicesInSameAreaKeepFirstEntryAndContinuouslyExtendLastExit() {
         for (int i = 0; i < 6; i++) service.accept(1L, employee, 10L, punch(i + 1, 101 + i, 9 + i, 0));
         assertThat(stored).hasSize(1);

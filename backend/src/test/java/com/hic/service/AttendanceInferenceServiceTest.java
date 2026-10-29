@@ -12,6 +12,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class AttendanceInferenceServiceTest {
 
+    @Test
+    void laterDirectionalEntryKeepsItsShiftWindowAfterACombinedScan() {
+        LocalDate date = LocalDate.of(2026, 10, 9);
+        var combined = new AttendanceLog(); combined.setCheckInTime(date.atTime(20, 0));
+        combined.setCombinedAreaId(10L); combined.setCombinedWorkDate(date);
+        var directional = new AttendanceLog(); directional.setCheckInTime(date.atTime(21, 0));
+        var inference = new AttendanceInferenceService().inferDay(List.of(combined, directional), date);
+        assertThat(inference.currentlyInside()).isTrue();
+        assertThat(inference.openSessionDeadline()).isNull();
+    }
+
+    @Test
+    void laterCombinedEntryUsesMidnightEvenWhenAnOlderDirectionalRowIsOpen() {
+        LocalDate date = LocalDate.of(2026, 10, 9);
+        var combined = new AttendanceLog(); combined.setCheckInTime(date.atTime(21, 0));
+        combined.setCombinedAreaId(10L); combined.setCombinedWorkDate(date);
+        var directional = new AttendanceLog(); directional.setCheckInTime(date.atTime(20, 0));
+        assertThat(new AttendanceInferenceService().inferDay(List.of(combined, directional), date).openSessionDeadline())
+                .isEqualTo(date.plusDays(1).atStartOfDay());
+    }
+
     private AttendanceInferenceService service;
 
     @BeforeEach

@@ -554,7 +554,7 @@ public class DoorAttendanceSyncService {
                 log.warn("Invalid ISAPI deviceId on device config id={}: {}", device.getId(), device.getDeviceId());
             }
         }
-        return device.getId();
+        return null;
     }
 
     private void addRecalcDate(Map<Long, Set<LocalDate>> map, Long employeeId, LocalDate date) {

@@ -55,6 +55,19 @@ class DoorAttendanceSyncServiceTest {
 
     private final AtomicLong logIdSeq = new AtomicLong(1);
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"not-a-bridge-id"})
+    void invalidBridgeMappingCannotFallBackToBackendId(String bridgeId) {
+        DeviceConfig invalid = device(101L, bridgeId, "BOTH");
+        invalid.setBranchId(7L);
+        when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(invalid));
+        var result = doorAttendanceSyncService.syncAllDevices(
+                LocalDate.of(2026, 10, 9).atStartOfDay(), LocalDate.of(2026, 10, 10).atStartOfDay(), 100);
+        assertThat(result.getTotalPunches()).isZero();
+        org.mockito.Mockito.verifyNoInteractions(attendanceLogSyncService, combinedDeviceAttendanceService);
+    }
+
     @BeforeEach
     void setUp() {
         TenantContext.setTenantId(1L);

@@ -89,8 +89,10 @@ public class AttendanceTimeCalculator {
             AttendanceInferenceService.AttendanceInference inference,
             AttendanceScheduleResolver.DaySchedule schedule
     ) {
-        boolean expired = AttendanceSessionPolicy.isExpired(
-                inference.firstEntry(), schedule, AppTimeZone.now());
+        LocalDateTime now = AppTimeZone.now();
+        boolean expired = inference.openSessionDeadline() != null
+                ? !now.isBefore(inference.openSessionDeadline())
+                : AttendanceSessionPolicy.isExpired(inference.firstEntry(), schedule, now);
         return expired ? AttendanceStatus.MISSING_EXIT : AttendanceStatus.OPEN_SESSION;
     }
 

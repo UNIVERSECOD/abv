@@ -92,7 +92,25 @@ public class AttendanceInferenceService {
         // terminal. Presence follows event time, not whether any historical row is open.
         // Use source rows here: duration deduplication must not hide a quick re-entry.
         boolean currentlyInside = latestPunchIsEntry(logs, day);
-        return new AttendanceInference(firstEntry, lastExit, workedMinutes, currentlyInside, List.copyOf(segments));
+        LocalDateTime openDeadline = currentlyInside ? latestOpenCalendarDeadline(logs, day) : null;
+        return new AttendanceInference(firstEntry, lastExit, workedMinutes, currentlyInside, List.copyOf(segments), openDeadline);
+    }
+
+    private LocalDateTime latestOpenCalendarDeadline(List<AttendanceLog> logs, LocalDate day) {
+        return logs.stream()
+                .filter(log -> belongsToWorkDate(log, day) && log.getCheckOutTime() == null)
+                .max(Comparator.comparing(this::effectiveEntry)
+                        // A real directional entry at the same instant retains its own shift window.
+                        .thenComparing(log -> log.getCombinedWorkDate() == null ? 1 : 0))
+                .map(AttendanceSessionPolicy::calendarDayDeadline).orElse(null);
+    }
+
+    private LocalDateTime effectiveEntry(AttendanceLog log) {
+        LocalDateTime entry = log.getCheckInTime();
+        LocalDateTime repeated = log.getLastEntryTime();
+        return !Boolean.TRUE.equals(log.getManualOverride()) && repeated != null
+                && repeated.isAfter(entry) && (log.getCheckOutTime() == null || repeated.isBefore(log.getCheckOutTime()))
+                ? repeated : entry;
     }
 
     private boolean latestPunchIsEntry(List<AttendanceLog> logs, LocalDate day) {
@@ -103,11 +121,7 @@ public class AttendanceInferenceService {
             LocalDateTime entry = log.getCheckInTime();
             LocalDateTime exit = log.getCheckOutTime();
             if (exit != null && !exit.isAfter(entry)) continue;
-            LocalDateTime repeated = log.getLastEntryTime();
-            if (!Boolean.TRUE.equals(log.getManualOverride()) && repeated != null
-                    && repeated.isAfter(entry) && (exit == null || repeated.isBefore(exit))) {
-                entry = repeated;
-            }
+            entry = effectiveEntry(log);
             if (latestEntry == null || entry.isAfter(latestEntry)) latestEntry = entry;
             if (exit != null && (latestExit == null || exit.isAfter(latestExit))) latestExit = exit;
         }
@@ -174,10 +188,16 @@ public class AttendanceInferenceService {
             LocalDateTime lastExit,
             int workedMinutes,
             boolean currentlyInside,
-            List<SessionSegment> segments
+            List<SessionSegment> segments,
+            LocalDateTime openSessionDeadline
     ) {
+        public AttendanceInference(LocalDateTime firstEntry, LocalDateTime lastExit, int workedMinutes,
+                                   boolean currentlyInside, List<SessionSegment> segments) {
+            this(firstEntry, lastExit, workedMinutes, currentlyInside, segments, null);
+        }
+
         public AttendanceInference(LocalDateTime firstEntry, LocalDateTime lastExit, int workedMinutes, boolean currentlyInside) {
-            this(firstEntry, lastExit, workedMinutes, currentlyInside, List.of());
+            this(firstEntry, lastExit, workedMinutes, currentlyInside, List.of(), null);
         }
 
         /** Sum of closed check-in/check-out intervals (flexible-shift basis). */

@@ -65,7 +65,9 @@ public class DashboardAttendanceService {
             Transition last = item.getValue();
             if (!last.entry()) continue;
             var schedule = schedules.apply(byId.get(item.getKey()), last.log().getCheckInTime().toLocalDate());
-            boolean expired = ShiftTypes.isFlexible(last.log().getShiftType())
+            LocalDateTime calendarDeadline = AttendanceSessionPolicy.calendarDayDeadline(last.log());
+            boolean expired = calendarDeadline != null ? !now.isBefore(calendarDeadline)
+                    : ShiftTypes.isFlexible(last.log().getShiftType())
                     ? !now.isBefore(last.log().getCheckInTime().plusHours(AttendanceSessionPolicy.FLEXIBLE_MAX_SESSION_HOURS))
                     : AttendanceSessionPolicy.isExpired(last.log().getCheckInTime(), schedule, now);
             if (expired) { unresolved++; continue; }

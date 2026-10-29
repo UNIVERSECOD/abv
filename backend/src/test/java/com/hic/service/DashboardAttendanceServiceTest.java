@@ -43,6 +43,19 @@ class DashboardAttendanceServiceTest {
     }
     @AfterEach void cleanup() { TenantContext.clear(); }
 
+    @Test void combinedSingleScanExpiresAtMidnightRatherThanDirectionalGraceWindow() {
+        now = now.withHour(1);
+        AttendanceLog previousDay = log(1, one, now.minusDays(1).withHour(23).withMinute(50), null, 10L);
+        previousDay.setCombinedAreaId(10L);
+        previousDay.setCombinedWorkDate(previousDay.getCheckInTime().toLocalDate());
+        previousDay.setShiftType("STANDARD");
+        source(previousDay);
+        var result = service.at(now);
+        assertThat(result.areas()).allSatisfy(area -> assertThat(area.employeeCount()).isZero());
+        assertThat(result.attended()).isZero();
+        assertThat(result.unresolvedPresence()).isEqualTo(1);
+    }
+
     @Test void dayCountsAreDistinctAndIndependentWithDateSpecificLeaveAndPermission() {
         var present = day("EARLY_LEAVE"); present.setCheckInTime(AppTimeZone.toOffsetDateTime(now.withHour(9)));
         present.setLateMinutes(15); present.setEarlyLeaveMinutes(30); present.setHasPermission(true);

@@ -129,6 +129,7 @@ public class AttendanceLogSyncService {
                 .toList();
 
         Map<String, Employee> employeeMap = new HashMap<>();
+        Map<String, List<Employee>> ambiguousTerminalNumbers = new HashMap<>();
         if (!employeeNos.isEmpty()) {
             Long tenantId = TenantContext.getTenantId();
             List<Employee> employees = tenantId != null
@@ -138,27 +139,42 @@ public class AttendanceLogSyncService {
                 indexEmployee(employeeMap, emp);
             }
             for (String no : employeeNos) {
-                if (employeeMap.containsKey(no.toLowerCase())) {
-                    continue;
-                }
                 List<Employee> byDeviceNo = tenantId != null
                         ? employeeRepository.findByTenantIdAndDeviceEmployeeNoIgnoreCase(tenantId, no)
                         : employeeRepository.findByDeviceEmployeeNoIgnoreCase(no);
                 if (byDeviceNo.size() == 1) {
-                    indexEmployee(employeeMap, byDeviceNo.get(0));
+                    // The raw ISAPI identity is a terminal number, not another person's HR code.
+                    employeeMap.put(no.toLowerCase(java.util.Locale.ROOT), byDeviceNo.get(0));
+                } else if (byDeviceNo.size() > 1) {
+                    employeeMap.remove(no.toLowerCase(java.util.Locale.ROOT));
+                    ambiguousTerminalNumbers.put(no.toLowerCase(java.util.Locale.ROOT), byDeviceNo);
                 }
             }
         }
 
         Map<Long, DeviceConfig> deviceMap = loadDevices(punches);
+        Map<String, Employee> resolvedAmbiguous = new HashMap<>();
 
         return punches.stream()
                 .map(response -> {
-                    String key = response.getEmployeeNo() != null ? response.getEmployeeNo().trim().toLowerCase() : null;
+                    String key = response.getEmployeeNo() != null ? response.getEmployeeNo().trim().toLowerCase(java.util.Locale.ROOT) : null;
                     Employee emp = key != null ? employeeMap.get(key) : null;
+                    DeviceConfig device = response.getDeviceId() != null ? deviceMap.get(response.getDeviceId()) : null;
+                    if (key != null && ambiguousTerminalNumbers.containsKey(key) && device != null) {
+                        String pair = device.getId() + ":" + key;
+                        if (!resolvedAmbiguous.containsKey(pair)) {
+                            var matches = employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(device.getId(), response.getEmployeeNo().trim())
+                                    .stream().filter(e -> device.getTenantId() == null || device.getTenantId().equals(e.getTenantId())).toList();
+                            if (matches.size() != 1 && device.getBranchId() != null) {
+                                matches = ambiguousTerminalNumbers.get(key).stream()
+                                        .filter(e -> device.getBranchId().equals(e.getBranchId())).toList();
+                            }
+                            resolvedAmbiguous.put(pair, matches.size() == 1 ? matches.get(0) : null);
+                        }
+                        emp = resolvedAmbiguous.get(pair);
+                    }
                     String firstName = emp != null ? emp.getFirstName() : null;
                     String lastName = emp != null ? emp.getLastName() : null;
-                    DeviceConfig device = response.getDeviceId() != null ? deviceMap.get(response.getDeviceId()) : null;
                     String deviceName = device != null ? device.getDeviceName() : null;
                     String doorRole = device != null ? device.getDoorRole() : null;
                     return new AttendanceLogSyncDTO.AttendanceLogEntryDTO(
@@ -189,12 +205,11 @@ public class AttendanceLogSyncService {
                 ? deviceConfigRepository.findByTenantId(tenantId)
                 : deviceConfigRepository.findAll();
 
-        Map<Long, DeviceConfig> byIsapiOrBackendId = new HashMap<>();
+        Map<Long, DeviceConfig> byIsapiId = new HashMap<>();
         for (DeviceConfig device : devices) {
-            byIsapiOrBackendId.put(device.getId(), device);
             if (device.getDeviceId() != null && !device.getDeviceId().isBlank()) {
                 try {
-                    byIsapiOrBackendId.putIfAbsent(Long.valueOf(device.getDeviceId().trim()), device);
+                    byIsapiId.put(Long.valueOf(device.getDeviceId().trim()), device);
                 } catch (NumberFormatException ignored) {
                     // non-numeric deviceId strings are ignored for punch mapping
                 }
@@ -203,7 +218,7 @@ public class AttendanceLogSyncService {
 
         Map<Long, DeviceConfig> matched = new HashMap<>();
         for (Long punchDeviceId : punchDeviceIds) {
-            DeviceConfig device = byIsapiOrBackendId.get(punchDeviceId);
+            DeviceConfig device = byIsapiId.get(punchDeviceId);
             if (device != null) {
                 matched.put(punchDeviceId, device);
             }
@@ -223,7 +238,6 @@ public class AttendanceLogSyncService {
         }
         Set<Long> tenantIsapiIds = new HashSet<>();
         for (DeviceConfig device : deviceConfigRepository.findByTenantId(tenantId)) {
-            tenantIsapiIds.add(device.getId());
             if (device.getDeviceId() != null && !device.getDeviceId().isBlank()) {
                 try {
                     tenantIsapiIds.add(Long.valueOf(device.getDeviceId().trim()));
@@ -242,10 +256,10 @@ public class AttendanceLogSyncService {
 
     private static void indexEmployee(Map<String, Employee> employeeMap, Employee emp) {
         if (emp.getEmployeeId() != null) {
-            employeeMap.put(emp.getEmployeeId().trim().toLowerCase(), emp);
+            employeeMap.put(emp.getEmployeeId().trim().toLowerCase(java.util.Locale.ROOT), emp);
         }
         if (emp.getDeviceEmployeeNo() != null && !emp.getDeviceEmployeeNo().isBlank()) {
-            employeeMap.putIfAbsent(emp.getDeviceEmployeeNo().trim().toLowerCase(), emp);
+            employeeMap.putIfAbsent(emp.getDeviceEmployeeNo().trim().toLowerCase(java.util.Locale.ROOT), emp);
         }
     }
 

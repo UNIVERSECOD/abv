@@ -16,6 +16,21 @@ class AttendanceTimeCalculatorTest {
     private final LocalDate date = LocalDate.of(2024, 1, 15);
 
     @Test
+    void combinedPreviousDayMissingExitDoesNotRemainOpenUnderNightShiftGrace() {
+        var log = new com.hic.model.AttendanceLog();
+        log.setCheckInTime(date.atTime(23, 50));
+        log.setCombinedAreaId(10L); log.setCombinedWorkDate(date);
+        var inference = new AttendanceInferenceService().inferDay(List.of(log), date);
+        var schedule = new AttendanceScheduleResolver.DaySchedule(1L, "NIGHT", true,
+                LocalTime.of(20, 0), LocalTime.of(8, 0), 0, 0, 0);
+        try (var clock = org.mockito.Mockito.mockStatic(com.hic.util.AppTimeZone.class)) {
+            clock.when(com.hic.util.AppTimeZone::now).thenReturn(date.plusDays(1).atTime(1, 0));
+            clock.when(com.hic.util.AppTimeZone::today).thenReturn(date.plusDays(1));
+            assertThat(calculator.calculate(date, inference, schedule).status()).isEqualTo(AttendanceStatus.MISSING_EXIT);
+        }
+    }
+
+    @Test
     void entryAtToleranceBoundary_isNormal() {
         var result = calculator.calculate(
                 date,

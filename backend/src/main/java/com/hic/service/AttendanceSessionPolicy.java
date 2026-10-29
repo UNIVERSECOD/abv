@@ -33,8 +33,9 @@ public class AttendanceSessionPolicy {
         }
 
         LocalDateTime checkIn = session.getCheckInTime();
-        if (session.getCombinedWorkDate() != null) {
-            return !now.isBefore(session.getCombinedWorkDate().plusDays(1).atStartOfDay());
+        LocalDateTime calendarDeadline = calendarDayDeadline(session);
+        if (calendarDeadline != null) {
+            return !now.isBefore(calendarDeadline);
         }
         if (ShiftTypes.isFlexible(session.getShiftType())) {
             return !now.isBefore(checkIn.plusHours(FLEXIBLE_MAX_SESSION_HOURS));
@@ -69,6 +70,11 @@ public class AttendanceSessionPolicy {
                     : minimumSessionCutoff;
         }
         return !now.isBefore(expiresAt);
+    }
+
+    static LocalDateTime calendarDayDeadline(AttendanceLog session) {
+        return session != null && session.getCombinedWorkDate() != null
+                ? session.getCombinedWorkDate().plusDays(1).atStartOfDay() : null;
     }
 
     public boolean isDuplicateEntry(AttendanceLog openSession, LocalDateTime punchTime) {

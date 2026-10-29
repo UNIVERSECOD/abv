@@ -1,0 +1,1 @@
+CREATE DATABASE hic_isapi;

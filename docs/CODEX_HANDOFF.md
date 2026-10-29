@@ -1,5 +1,7 @@
 # ABV variant (2026-10-29)
 
+Source-free image delivery is prepared; see [ABV_IMAGE_DELIVERY.md](ABV_IMAGE_DELIVERY.md) and `deploy/ubuntu-images/README.md`. Customer Ubuntu installation uses the exported runtime-image bundle, without cloning this repository or building code. The existing source-build instructions are for development. Package verification did not deploy to the customer's server or contact physical devices.
+
 Copied from main 2905751 to UNIVERSECOD/abv. Read ../README_ABV.md for this variant and Ubuntu startup. Tabel UI now requests STANDARD and displays whole daily hours; minutes 00–30 round down, 31–59 round up. Monthly totals sum the rounded days. API/Excel agree; stored summaries, migrations, devices and other reports are untouched. Historical handoff below describes the upstream project.
 
 # Codex Project Handoff

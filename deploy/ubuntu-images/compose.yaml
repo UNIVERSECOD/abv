@@ -1,0 +1,68 @@
+name: abv
+services:
+  postgres:
+    image: postgres:15-alpine
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hic_backend
+      POSTGRES_USER: hic_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Missing POSTGRES_PASSWORD}
+      TZ: Asia/Baku
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-isapi.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U hic_user -d hic_backend']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  backend:
+    image: abv-backend:__ABV_VERSION__
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hic_backend
+      SPRING_DATASOURCE_USERNAME: hic_user
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?Missing POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Missing JWT_SECRET}
+      ENCRYPTION_SECRET_KEY: ${ENCRYPTION_SECRET_KEY:?Missing ENCRYPTION_SECRET_KEY}
+      ISAPI_API_KEY: ${ISAPI_API_KEY:?Missing ISAPI_API_KEY}
+      ISAPI_BASE_URL: http://isapi:8081
+      CORS_ALLOWED_ORIGINS: ${APP_ORIGIN:?Missing APP_ORIGIN}
+      SPRING_PROFILES_ACTIVE: prod
+      APP_RUNTIME_DIR: /app/runtime
+      TZ: Asia/Baku
+    volumes:
+      - face_images:/app/uploads/faces
+      - ./runtime:/app/runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      isapi:
+        condition: service_started
+  isapi:
+    image: abv-isapi:__ABV_VERSION__
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/hic_isapi
+      DB_USERNAME: hic_user
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Missing POSTGRES_PASSWORD}
+      ISAPI_API_KEY: ${ISAPI_API_KEY:?Missing ISAPI_API_KEY}
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Baku
+    depends_on:
+      postgres:
+        condition: service_healthy
+  frontend:
+    image: abv-frontend:__ABV_VERSION__
+    pull_policy: never
+    restart: unless-stopped
+    ports:
+      - '${ABV_BIND_ADDRESS:-127.0.0.1}:3000:80'
+    depends_on:
+      - backend
+volumes:
+  postgres_data:
+  face_images:

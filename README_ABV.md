@@ -2,7 +2,17 @@
 
 Mənbə: Attendra main, 2905751 (2026-10-29). Tabel standart hesablamadan istifadə edir. Hər günün işlənmiş dəqiqəsi ayrıca yuvarlaqlaşdırılır: 00–30 aşağı, 31–59 yuxarı. 07:20 → 7, 07:30 → 7, 07:31 → 8. Aylıq cəm həmin gündəlik saatların cəmidir. UI və Excel eynidir. Faktiki davamiyyət, digər hesabatlar, məzuniyyət/istirahət kodları və bazadakı dəqiq vaxtlar saxlanır. Müsbət vaxtı olan gün, yuvarlaq nəticəsi 0 olsa da, işlənmiş gün sayılır.
 
-## Yeni Ubuntu serverində quraşdırma
+## Mənbə kodu olmadan Ubuntu quraşdırması
+
+Müştəri serverinə repository köçürməyin. Hazır image paketi üçün `deploy/ubuntu-images/README.md` təlimatını istifadə edin. Paket hazırlamaq (yalnız inkişaf kompüterində, yoxlanmış `abv-*:latest` image-lər ilə):
+
+```powershell
+./scripts/export-image-delivery.ps1 -Version 20261029-d4b5b44 -ApplicationCommit d4b5b44923abe502d46c44f4a67f80c752c6403f
+```
+
+Nəticə `build/abv-ubuntu-20261029-d4b5b44.tar.gz` və onun `.sha256` faylıdır. Paket yalnız final runtime image-lərini və quraşdırma fayllarını daşıyır; Git-ə iri image arxivi və real `.env` push edilmir. Aşağıdakı mənbədən build təlimatı inkişaf kompüteri üçündür.
+
+## Mənbədən quraşdırma (inkişaf kompüteri)
 
 Docker Engine, Docker Compose plugin, Git və openssl əvvəlcədən quraşdırılmalıdır.
 

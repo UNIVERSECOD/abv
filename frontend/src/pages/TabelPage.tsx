@@ -120,10 +120,10 @@ export default function TabelPage() {
       const href = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = href
-      anchor.download = `abv-tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
+      anchor.download = `attendra-tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
       anchor.click()
       URL.revokeObjectURL(href)
-      toast.success('ABV Tabel Excel faylı hazırlandı')
+      toast.success('Tabel Excel faylı hazırlandı')
     } catch {
       toast.error('Excel faylı hazırlanmadı', 'Bir qədər sonra təkrar yoxlayın.')
     } finally {
@@ -198,7 +198,7 @@ export default function TabelPage() {
           <section className="flex-1 min-w-0 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">ABV — Standart tabel</h1>
+                <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
                 <p className="mt-1 text-sm text-slate-500">İşlənmiş vaxt tam saata yuvarlaqlaşdırılır: 00–30 dəqiqə aşağı, 31–59 dəqiqə yuxarı (07:20 → 7, 07:31 → 8). Aylıq cəm gündəlik yuvarlaq saatların cəmidir.</p>
               </div>
               <button onClick={handleExport} disabled={!data || exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">

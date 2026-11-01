@@ -52,7 +52,7 @@ export default function AttendraBrand({
   onDark = false,
   className = '',
   onClick,
-  title = 'Attendra ABV',
+  title = 'Attendra',
 }: Props) {
   const titleColor = onDark ? '#ffffff' : '#0b1b4d'
   const taglineColor = onDark ? '#c7d2fe' : '#64748b'
@@ -69,7 +69,7 @@ export default function AttendraBrand({
       {showWordmark && (
         <div className="min-w-0 text-left">
           <p className={`${TITLE_CLASS[size]} leading-none truncate`} style={{ color: titleColor }}>
-            Attendra ABV
+            Attendra
           </p>
           {showTagline && (
             <p className={`${TAGLINE_CLASS[size]} mt-1 truncate`} style={{ color: taglineColor }}>

@@ -1,5 +1,7 @@
 # ABV variant (2026-10-29)
 
+Device-import resolve planning (2026-11-01): user requested preserving the proposed confirmation flow, and explicitly deferred implementation. Read [the device-import resolve skill](../skills/attendra-device-import-resolve/SKILL.md) before continuing this topic. It records current duplicate-ID behavior, the merge/separate/defer proposal and the required device-scoped identity design. No resolve feature has been implemented.
+
 2026-11-01 branding update: visible application name is Attendra; removed ABV from browser title, shared brand, Tabel heading, export toast and download filename. Internal repository/image/Compose identifiers remain abv. Standard rounded-hours behavior is unchanged.
 
 Source-free image delivery is prepared; see [ABV_IMAGE_DELIVERY.md](ABV_IMAGE_DELIVERY.md) and `deploy/ubuntu-images/README.md`. Customer Ubuntu installation uses the exported runtime-image bundle, without cloning this repository or building code. The existing source-build instructions are for development. Package verification did not deploy to the customer's server or contact physical devices.

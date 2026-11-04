@@ -7,6 +7,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
+
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -51,6 +53,9 @@ public class DeviceCursorService {
                 });
 
         cursor.setOnline(online);
+        if (online) {
+            cursor.setLastPollTime(OffsetDateTime.now());
+        }
         DeviceCursorEntity saved = deviceCursorRepository.save(cursor);
         log.info("ActionLog.device.cursor.online.updated deviceId={} online={} lastSerialNo={} lastPollTime={}",
                 saved.getDeviceId(), saved.isOnline(), saved.getLastSerialNo(), saved.getLastPollTime());

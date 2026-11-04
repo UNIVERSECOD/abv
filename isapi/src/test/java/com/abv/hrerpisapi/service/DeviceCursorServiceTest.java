@@ -99,6 +99,7 @@ class DeviceCursorServiceTest {
         assertThat(saved.getDeviceId()).isEqualTo(4L);
         assertThat(saved.getLastSerialNo()).isEqualTo(0L);
         assertThat(saved.isOnline()).isTrue();
-        assertThat(saved.getLastPollTime()).isNull();
+        assertThat(saved.getLastPollTime()).isNotNull();
+        assertThat(saved.getLastPollTime()).isAfter(OffsetDateTime.now().minusMinutes(1));
     }
 }

@@ -219,6 +219,11 @@ class HikDeviceUserImportServiceTest {
                 .thenReturn(ResponseEntity.ok("""
                         {"employeeNo":"1001","status":"SUCCESS","imageBase64":"AQID"}
                         """));
+        when(restTemplate.exchange(eq("http://isapi:8081/api/devices/101/faces/1002/download"),
+                eq(HttpMethod.GET), eq(null), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        {"employeeNo":"1002","status":"SUCCESS","imageBase64":"BAUG"}
+                        """));
 
         when(employeeRepository.findByTenantIdAndEmployeeIdIgnoreCase(eq(1L), anyString()))
                 .thenReturn(Optional.empty());
@@ -240,21 +245,26 @@ class HikDeviceUserImportServiceTest {
         when(employeeDeviceAccessRepository.existsByEmployeeIdAndDeviceConfigId(anyLong(), anyLong()))
                 .thenReturn(false);
         java.util.concurrent.atomic.AtomicBoolean faceSavedFor50 = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean faceSavedFor51 = new java.util.concurrent.atomic.AtomicBoolean(false);
         when(employeeFaceImageService.hasFaceImage(50L)).thenAnswer(inv -> faceSavedFor50.get());
-        when(employeeFaceImageService.hasFaceImage(51L)).thenReturn(false);
+        when(employeeFaceImageService.hasFaceImage(51L)).thenAnswer(inv -> faceSavedFor51.get());
         org.mockito.Mockito.doAnswer(inv -> {
             faceSavedFor50.set(true);
             return null;
         }).when(employeeFaceImageService).saveFaceImageBytes(eq(50L), any(byte[].class), eq("jpg"));
+        org.mockito.Mockito.doAnswer(inv -> {
+            faceSavedFor51.set(true);
+            return null;
+        }).when(employeeFaceImageService).saveFaceImageBytes(eq(51L), any(byte[].class), eq("jpg"));
 
         DeviceEmployeeImportDTO.ImportResult result = service.importUsersFromBranch(
                 new DeviceEmployeeImportDTO.ImportRequest(10L, null, false));
 
         assertThat(result.getCreated()).isEqualTo(2);
-        assertThat(result.getFacesSynced()).isEqualTo(1);
-        assertThat(result.getFacesSkippedNoMatch()).isEqualTo(1);
+        assertThat(result.getFacesSynced()).isEqualTo(2);
+        assertThat(result.getFacesSkippedNoMatch()).isZero();
         verify(employeeFaceImageService).saveFaceImageBytes(eq(50L), any(byte[].class), eq("jpg"));
-        verify(employeeFaceImageService, never()).saveFaceImageBytes(eq(51L), any(byte[].class), anyString());
+        verify(employeeFaceImageService).saveFaceImageBytes(eq(51L), any(byte[].class), eq("jpg"));
     }
 
     @Test

@@ -501,11 +501,12 @@ public class HikDeviceUserImportService {
         Map<String, String> faceUrlByFpid = fetchFaceIndexFromDevice(isapiId);
         status.setFaceCount(faceUrlByFpid.size());
         if (faceUrlByFpid.isEmpty()) {
-            log.info("No face records on deviceConfigId={} isapiId={}", device.getId(), isapiId);
-            return;
+            log.info("Bulk face index is empty on deviceConfigId={} isapiId={}; trying each employee number",
+                    device.getId(), isapiId);
         }
 
         int syncedOnDevice = 0;
+        int individuallyDiscovered = 0;
         for (AggregatedPerson person : byEmployeeNo.values()) {
             if (person.conflict || person.employeePk == null) {
                 continue;
@@ -515,10 +516,7 @@ public class HikDeviceUserImportService {
             }
 
             String fpidKey = person.employeeNo.toLowerCase(Locale.ROOT);
-            if (!faceUrlByFpid.containsKey(fpidKey)) {
-                // No FDLib record for this person on this device — do not assign any image.
-                continue;
-            }
+            boolean listedInBulkIndex = faceUrlByFpid.containsKey(fpidKey);
 
             if (employeeFaceImageService.hasFaceImage(person.employeePk)) {
                 result.setFacesSkippedExisting(result.getFacesSkippedExisting() + 1);
@@ -528,21 +526,27 @@ public class HikDeviceUserImportService {
             try {
                 Optional<byte[]> imageBytes = downloadFaceBytesFromDevice(isapiId, person.employeeNo);
                 if (imageBytes.isEmpty()) {
-                    result.setFacesFailed(result.getFacesFailed() + 1);
+                    if (listedInBulkIndex) {
+                        result.setFacesFailed(result.getFacesFailed() + 1);
+                    }
                     continue;
                 }
                 employeeFaceImageService.saveFaceImageBytes(person.employeePk, imageBytes.get(), "jpg");
                 result.setFacesSynced(result.getFacesSynced() + 1);
                 syncedOnDevice++;
+                if (!listedInBulkIndex) {
+                    individuallyDiscovered++;
+                }
             } catch (Exception ex) {
                 log.warn("Failed to sync face for employeeNo={} deviceConfigId={}: {}",
                         person.employeeNo, device.getId(), ex.getMessage());
                 result.setFacesFailed(result.getFacesFailed() + 1);
             }
         }
+        status.setFaceCount(faceUrlByFpid.size() + individuallyDiscovered);
         status.setFacesSynced(syncedOnDevice);
-        log.info("Face sync for deviceConfigId={} isapiId={}: faceIndex={} synced={}",
-                device.getId(), isapiId, faceUrlByFpid.size(), syncedOnDevice);
+        log.info("Face sync for deviceConfigId={} isapiId={}: faceIndex={} individuallyDiscovered={} synced={}",
+                device.getId(), isapiId, faceUrlByFpid.size(), individuallyDiscovered, syncedOnDevice);
     }
 
     /**

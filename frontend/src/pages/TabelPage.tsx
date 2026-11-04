@@ -45,7 +45,6 @@ export default function TabelPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const debouncedSearch = useDebounce(search, 300)
   const filters = useMemo(() => ({
-    mode: 'STANDARD' as const,
     year,
     month,
     branchId: branchId === '' ? undefined : branchId,
@@ -89,15 +88,7 @@ export default function TabelPage() {
       try {
         const res = await tabelApi.getMonthly(filters)
         if (!active) return
-        if (res.data.data.calculationMode !== 'MCG') {
-          setData(null)
-          toast.error('MCG hesablaması aktiv deyil', 'Backend və frontend eyni MCG versiyası ilə yenilənməlidir.')
-          return
-        }
         setData(res.data.data)
-        if (res.data.data.rows.some((row) => Object.values(row.mcgDaily ?? {}).some((day) => !day.sourceVerified))) {
-          toast.warning('Bəzi günlər yalnız arxiv saatı ilə göstərilir', 'Giriş–çıxış qeydləri olmayan günlər üçün tam gün və overtime təsdiqlənmir. Ətraflı məlumat günün üzərində göstərilir.')
-        }
       } catch {
         if (active) {
           setData(null)
@@ -245,25 +236,30 @@ export default function TabelPage() {
                 <thead>
                   <tr className="bg-slate-50 text-xs uppercase text-slate-500">
                     <th className="sticky left-0 z-30 min-w-[50px] max-w-[50px] border-b bg-slate-50 px-3 py-3 text-left truncate">s/s</th>
-                    <th className="sticky left-[50px] z-30 min-w-[110px] max-w-[110px] border-b bg-slate-50 px-3 py-3 text-left truncate">FIN kod</th>
-                    <th className="sticky left-[160px] z-30 min-w-[200px] max-w-[200px] border-b bg-slate-50 px-3 py-3 text-left truncate">Soyadı, adı</th>
+                    <th className="sticky left-[50px] z-30 min-w-[110px] max-w-[110px] border-b bg-slate-50 px-3 py-3 text-left truncate">Sicil No</th>
+                    <th className="sticky left-[160px] z-30 min-w-[200px] max-w-[200px] border-b bg-slate-50 px-3 py-3 text-left truncate">Adı, soyadı, ata adı</th>
                     <th className="sticky left-[360px] z-30 min-w-[140px] max-w-[140px] border-b bg-slate-50 px-3 py-3 text-left truncate">Vəzifəsi</th>
+                    <th className="min-w-[110px] border-b bg-slate-50 px-3 py-3 text-left">FİN</th>
+                    <th className="min-w-[130px] border-b bg-slate-50 px-3 py-3 text-left">İş yeri</th>
+                    <th className="min-w-[140px] border-b bg-slate-50 px-3 py-3 text-left">İş vaxtı</th>
+                    <th className="min-w-[140px] border-b bg-slate-50 px-3 py-3 text-left">İş qrafiki</th>
                     {Array.from({ length: data?.daysInMonth ?? 0 }, (_, day) => (
                       <th key={day + 1} className="sticky top-0 min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
                     ))}
-                    <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş günlərinin sayı</th>
-                    <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş saatlarının cəmi</th>
+                    {['Aydakı iş günləri norması', 'Saatlıq norma', 'İşlədiyi gün', 'İşlədiyi saat', 'Əlavə iş günü', 'Toplam işlədiyi', 'Məzuniyyət', 'İstirahət və bayram günləri', 'Ezamiyyə', 'Xəstəlik'].map((label) => (
+                      <th key={label} className="sticky top-0 min-w-[110px] border-b bg-slate-50 px-3 py-3 text-center normal-case">{label}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 6} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 18} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
                   ) : (data?.rows.length ?? 0) === 0 ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 6} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 18} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
                   ) : data?.rows.map((row, index) => (
                     <tr key={row.employeePk} className="border-b border-slate-100 text-slate-700">
                       <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
-                      <td className="sticky left-[50px] z-20 bg-white px-3 py-2 min-w-[110px] max-w-[110px] truncate" title={row.fin ?? '-'}>{row.fin ?? '-'}</td>
+                      <td className="sticky left-[50px] z-20 bg-white px-3 py-2 min-w-[110px] max-w-[110px] truncate" title={row.employeeCode ?? '-'}>{row.employeeCode ?? '-'}</td>
                       <td
                         className={`sticky left-[160px] z-20 bg-white px-3 py-2 min-w-[200px] max-w-[200px] truncate ${row.employmentStatus === 'TERMINATED' ? 'font-semibold text-red-600' : ''}`}
                         title={row.fullName}
@@ -271,6 +267,10 @@ export default function TabelPage() {
                         {row.fullName}
                       </td>
                       <td className="sticky left-[360px] z-20 bg-white px-3 py-2 min-w-[140px] max-w-[140px] truncate" title={row.position}>{row.position}</td>
+                      <td className="px-3 py-2">{row.fin ?? '-'}</td>
+                      <td className="px-3 py-2">{row.areaName}</td>
+                      <td className="px-3 py-2">{row.workTime}</td>
+                      <td className="px-3 py-2">{row.workSchedule}</td>
                       {Array.from({ length: data.daysInMonth }, (_, day) => {
                         const value = row.daily[String(day + 1)]
                         const isCode = typeof value === 'string'
@@ -278,8 +278,9 @@ export default function TabelPage() {
                         const color = isCode && Object.prototype.hasOwnProperty.call(data.leaveLegend ?? {}, value) ? 'font-semibold text-purple-700' : 'text-black'
                         return <td key={day + 1} className={`px-2 py-2 text-center ${color}`}>{isEmpty ? '' : value}</td>
                       })}
-                      <td className="px-3 py-2 text-center font-medium">{row.workingDays}</td>
-                      <td className="px-3 py-2 text-center font-medium">{row.totalHours}</td>
+                      {[row.normWorkingDays, row.normHours, row.workingDays, row.totalHours, row.extraWorkDays, row.totalWorkedDays, row.leaveDays, row.restHolidayDays, row.businessTripDays, row.sickDays].map((value, valueIndex) => (
+                        <td key={valueIndex} className="px-3 py-2 text-center font-medium">{value}</td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>

@@ -10,6 +10,7 @@ import com.hic.model.EmployeePermission;
 import com.hic.model.HolidayPermission;
 import com.hic.model.LeaveRequest;
 import com.hic.model.Position;
+import com.hic.model.Branch;
 import com.hic.repository.DailyAttendanceSummaryRepository;
 import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeePermissionRepository;
@@ -17,6 +18,8 @@ import com.hic.repository.EmployeeRepository;
 import com.hic.repository.HolidayPermissionRepository;
 import com.hic.repository.LeaveRequestRepository;
 import com.hic.repository.PositionRepository;
+import com.hic.repository.BranchRepository;
+import com.hic.repository.TimetableRepository;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Row;
@@ -48,11 +51,13 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class TabelService {
 
-    private static final String QI_CODE = "Q/I";
+    private static final String QI_CODE = "İ";
 
     private final EmployeeRepository employeeRepository;
     private final EmployeeAreaRepository employeeAreaRepository;
     private final PositionRepository positionRepository;
+    private final BranchRepository branchRepository;
+    private final TimetableRepository timetableRepository;
     private final DailyAttendanceSummaryRepository dailyAttendanceSummaryRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeePermissionRepository employeePermissionRepository;
@@ -105,6 +110,13 @@ public class TabelService {
         for (Position position : positionRepository.findByTenantId(tenantId)) {
             positionNames.put(position.getId(), position.getPositionName());
         }
+        Map<Long, String> branchNames = new HashMap<>();
+        for (Branch branch : branchRepository.findByTenantId(tenantId)) {
+            branchNames.put(branch.getId(), branch.getName());
+        }
+        Map<Long, String> timetableNames = new HashMap<>();
+        timetableRepository.findByTenantId(tenantId)
+                .forEach(timetable -> timetableNames.put(timetable.getId(), timetable.getName()));
 
         Map<Long, Set<LocalDate>> leaveByEmployee = buildLeaveDaysByEmployee(tenantId, employees, start, end);
         Map<Long, Map<LocalDate, String>> vacationByEmployee = new HashMap<>();
@@ -146,6 +158,14 @@ public class TabelService {
             int partialMinutes = 0;
             int overtimeMinutes = 0;
             int totalMinutes = 0;
+            int normWorkingDays = 0;
+            int normMinutes = 0;
+            int extraWorkDays = 0;
+            int leaveDays = 0;
+            int restHolidayDays = 0;
+            int businessTripDays = 0;
+            int sickDays = 0;
+            int representativeExpectedMinutes = 0;
 
             Set<LocalDate> leaveDates = leaveByEmployee.getOrDefault(employee.getId(), Set.of());
             Set<LocalDate> holidayDates = holidayByEmployee.getOrDefault(employee.getId(), Set.of());
@@ -153,11 +173,25 @@ public class TabelService {
             for (int day = 1; day <= yearMonth.lengthOfMonth(); day++) {
                 LocalDate date = yearMonth.atDay(day);
                 Object value;
+                var schedule = scheduleForTabel(employee, date);
+                if (schedule.workingDay()) {
+                    normWorkingDays++;
+                    normMinutes += schedule.expectedMinutes();
+                    representativeExpectedMinutes = Math.max(representativeExpectedMinutes, schedule.expectedMinutes());
+                }
 
-                if (vacationByEmployee.getOrDefault(employee.getId(), Map.of()).containsKey(date)) {
+                if (employee.getHireDate() != null && date.isBefore(employee.getHireDate())) {
+                    value = "i/qəbul";
+                } else if (employee.getTerminationDate() != null && !date.isBefore(employee.getTerminationDate())) {
+                    value = "i/azad";
+                } else if (vacationByEmployee.getOrDefault(employee.getId(), Map.of()).containsKey(date)) {
                     value = vacationByEmployee.get(employee.getId()).get(date);
+                    leaveDays++;
+                    if ("E".equalsIgnoreCase(String.valueOf(value))) businessTripDays++;
+                    if ("X".equalsIgnoreCase(String.valueOf(value))) sickDays++;
                 } else if (holidayDates.contains(date) || leaveDates.contains(date)) {
-                    value = mcg ? "Q/İ" : QI_CODE;
+                    restHolidayDays++;
+                    value = mcg ? "Q/İ" : holidayDates.contains(date) ? "B" : QI_CODE;
                 } else {
                     DailyAttendanceSummary summary = summariesByDate.get(date);
                     double hours = summary != null && summary.getHoursWorked() != null ? summary.getHoursWorked() : 0.0;
@@ -177,10 +211,12 @@ public class TabelService {
                         value = normalized;
                         workingDays++;
                         totalHours += normalized;
+                        if (!schedule.workingDay()) extraWorkDays++;
                     } else if (mcgDay != null) {
                         value = "FUTURE".equals(mcgDay.status()) || "DAY_OFF".equals(mcgDay.status()) ? null : 0;
-                    } else if (!isScheduledWorkingDay(employee, date, summary)) {
-                        value = null;
+                    } else if (!schedule.workingDay()) {
+                        value = "İ";
+                        restHolidayDays++;
                     } else {
                         value = 0;
                     }
@@ -192,13 +228,26 @@ public class TabelService {
 
             TabelMonthlyDTO.RowDTO row = new TabelMonthlyDTO.RowDTO();
             row.setEmployeePk(employee.getId());
+            row.setEmployeeCode(employee.getEmployeeId());
             row.setFin(employee.getFinNumber());
             row.setFullName(buildFullName(employee));
             row.setPosition(positionNames.getOrDefault(employee.getPositionId(), "-"));
+            row.setAreaName(branchNames.getOrDefault(employee.getBranchId(), "-"));
+            row.setWorkTime(workTimeLabel(employee.getShiftType(), representativeExpectedMinutes));
+            row.setWorkSchedule(timetableNames.getOrDefault(employee.getTimetableId(), "-"));
             row.setEmploymentStatus(employee.getEmploymentStatus());
+            row.setTerminationDate(employee.getTerminationDate());
             row.setDaily(daily);
+            row.setNormWorkingDays(normWorkingDays);
+            row.setNormHours(round2(normMinutes / 60.0));
             row.setWorkingDays(workingDays);
             row.setTotalHours(round2(mcg ? totalMinutes / 60.0 : totalHours));
+            row.setExtraWorkDays(extraWorkDays);
+            row.setBusinessTripDays(businessTripDays);
+            row.setTotalWorkedDays(workingDays + businessTripDays);
+            row.setLeaveDays(leaveDays);
+            row.setRestHolidayDays(restHolidayDays);
+            row.setSickDays(sickDays);
             if (mcg) {
                 row.setMcgDaily(mcgDaily);
                 row.setFullDays(fullDays);
@@ -219,6 +268,19 @@ public class TabelService {
         leaveLegendNames.forEach((code, names) -> leaveLegend.put(code, String.join(", ", names)));
         dto.setLeaveLegend(leaveLegend);
         return dto;
+    }
+
+    private String workTimeLabel(String shiftType, int expectedMinutes) {
+        if ("PART_TIME".equalsIgnoreCase(shiftType)) return "Natamam iş vaxtı";
+        if ("FULL_TIME".equalsIgnoreCase(shiftType)) return "Tam iş vaxtı";
+        return expectedMinutes > 0 && expectedMinutes < 8 * 60 ? "Natamam iş vaxtı" : "Tam iş vaxtı";
+    }
+
+    private AttendanceScheduleResolver.DaySchedule scheduleForTabel(Employee employee, LocalDate date) {
+        var schedule = attendanceScheduleResolver.resolve(employee, date);
+        return schedule != null ? schedule : new AttendanceScheduleResolver.DaySchedule(
+                employee.getTimetableId(), employee.getShiftType(), true,
+                java.time.LocalTime.of(9, 0), java.time.LocalTime.of(17, 0), 0, 0, 0, false);
     }
 
     public byte[] exportMonthlyTabel(int year,
@@ -250,24 +312,46 @@ public class TabelService {
             CellStyle shortDayStyle = mcgDayStyle(workbook, IndexedColors.RED, "[hh]:mm");
 
             Row titleRow = sheet.createRow(0);
-            titleRow.createCell(0).setCellValue((mcg ? "Attendra MCG — Tabel: " : "Tabel arxivi: ")
-                    + yearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
-                    + " " + year);
+            titleRow.createCell(0).setCellValue(mcg
+                    ? "Attendra MCG — Tabel: " + yearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + year
+                    : "Attendra — " + yearMonth.getMonth().getDisplayName(TextStyle.FULL,
+                            Locale.forLanguageTag("az")) + " " + year + " iş vaxtının uçotu tabeli");
 
             int column = 0;
             Row header = sheet.createRow(1);
             header.createCell(column++).setCellValue("s/s");
-            header.createCell(column++).setCellValue("FIN kod");
-            header.createCell(column++).setCellValue("Soyadı, adı, atasının adı");
-            header.createCell(column++).setCellValue("Vəzifəsi");
+            if (mcg) {
+                header.createCell(column++).setCellValue("FIN kod");
+                header.createCell(column++).setCellValue("Soyadı, adı, atasının adı");
+                header.createCell(column++).setCellValue("Vəzifəsi");
+            } else {
+                header.createCell(column++).setCellValue("Sicil No");
+                header.createCell(column++).setCellValue("Adı, soyadı, ata adı");
+                header.createCell(column++).setCellValue("Vəzifəsi");
+                header.createCell(column++).setCellValue("FİN");
+                header.createCell(column++).setCellValue("İş yeri");
+                header.createCell(column++).setCellValue("İş vaxtı");
+                header.createCell(column++).setCellValue("İş qrafiki");
+            }
             for (int day = 1; day <= tabel.getDaysInMonth(); day++) {
                 header.createCell(column++).setCellValue(day);
             }
             if (mcg) {
                 header.createCell(column++).setCellValue("Overtime (saat)");
+                header.createCell(column++).setCellValue("İş günlərinin sayı");
+                header.createCell(column).setCellValue("İş saatlarının cəmi");
+            } else {
+                header.createCell(column++).setCellValue("Aydakı iş günləri norması");
+                header.createCell(column++).setCellValue("Saatlıq norma");
+                header.createCell(column++).setCellValue("İşlədiyi gün");
+                header.createCell(column++).setCellValue("İşlədiyi saat");
+                header.createCell(column++).setCellValue("Əlavə iş günü");
+                header.createCell(column++).setCellValue("Toplam işlədiyi");
+                header.createCell(column++).setCellValue("Məzuniyyət");
+                header.createCell(column++).setCellValue("İstirahət və bayram günləri");
+                header.createCell(column++).setCellValue("Ezamiyyə");
+                header.createCell(column).setCellValue("Xəstəlik");
             }
-            header.createCell(column++).setCellValue("İş günlərinin sayı");
-            header.createCell(column).setCellValue("İş saatlarının cəmi");
 
             int rowIndex = 2;
             int order = 1;
@@ -275,13 +359,21 @@ public class TabelService {
                 Row sheetRow = sheet.createRow(rowIndex++);
                 int dataCol = 0;
                 sheetRow.createCell(dataCol++).setCellValue(order++);
-                sheetRow.createCell(dataCol++).setCellValue(row.getFin() == null ? "-" : row.getFin());
+                sheetRow.createCell(dataCol++).setCellValue(mcg
+                        ? row.getFin() == null ? "-" : row.getFin()
+                        : row.getEmployeeCode() == null ? "-" : row.getEmployeeCode());
                 var nameCell = sheetRow.createCell(dataCol++);
                 nameCell.setCellValue(row.getFullName());
                 if (Employee.EmploymentStatus.TERMINATED.equals(row.getEmploymentStatus())) {
                     nameCell.setCellStyle(terminatedNameStyle);
                 }
                 sheetRow.createCell(dataCol++).setCellValue(row.getPosition());
+                if (!mcg) {
+                    sheetRow.createCell(dataCol++).setCellValue(row.getFin() == null ? "-" : row.getFin());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getAreaName());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getWorkTime());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getWorkSchedule());
+                }
 
                 for (int day = 1; day <= tabel.getDaysInMonth(); day++) {
                     Object value = row.getDaily().get(day);
@@ -308,16 +400,32 @@ public class TabelService {
                     }
                 }
 
+                if (!mcg) {
+                    mergeMarkerRun(sheet, sheetRow, row.getDaily(), 8, tabel.getDaysInMonth(), "i/qəbul");
+                    mergeMarkerRun(sheet, sheetRow, row.getDaily(), 8, tabel.getDaysInMonth(), "i/azad");
+                }
+
                 if (mcg) {
                     sheetRow.setHeightInPoints(32);
                     var overtimeCell = sheetRow.createCell(dataCol++);
                     overtimeCell.setCellValue(Math.round(row.getOvertimeHours() * 60) / 1440.0);
                     overtimeCell.setCellStyle(row.getOvertimeHours() > 0 ? overtimeDayStyle : ordinaryHoursStyle);
+                    sheetRow.createCell(dataCol++).setCellValue(row.getWorkingDays());
+                    var totalCell = sheetRow.createCell(dataCol);
+                    totalCell.setCellValue(Math.round(row.getTotalHours() * 60) / 1440.0);
+                    totalCell.setCellStyle(ordinaryHoursStyle);
+                } else {
+                    sheetRow.createCell(dataCol++).setCellValue(row.getNormWorkingDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getNormHours());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getWorkingDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getTotalHours());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getExtraWorkDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getTotalWorkedDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getLeaveDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getRestHolidayDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getBusinessTripDays());
+                    sheetRow.createCell(dataCol).setCellValue(row.getSickDays());
                 }
-                sheetRow.createCell(dataCol++).setCellValue(row.getWorkingDays());
-                var totalCell = sheetRow.createCell(dataCol);
-                totalCell.setCellValue(mcg ? Math.round(row.getTotalHours() * 60) / 1440.0 : row.getTotalHours());
-                if (mcg) totalCell.setCellStyle(ordinaryHoursStyle);
             }
 
             for (var legend : tabel.getLeaveLegend().entrySet()) {
@@ -353,6 +461,30 @@ public class TabelService {
                 for (int i = rowIndex - 3; i <= rowIndex; i++) {
                     sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(i, i, 0, column));
                 }
+            } else {
+                Font headerFont = workbook.createFont();
+                headerFont.setBold(true);
+                CellStyle headerStyle = workbook.createCellStyle();
+                headerStyle.setFont(headerFont);
+                headerStyle.setWrapText(true);
+                headerStyle.setAlignment(org.apache.poi.ss.usermodel.HorizontalAlignment.CENTER);
+                headerStyle.setVerticalAlignment(org.apache.poi.ss.usermodel.VerticalAlignment.CENTER);
+                for (var cell : header) cell.setCellStyle(headerStyle);
+                header.setHeightInPoints(54);
+                sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, column));
+                sheet.createFreezePane(8, 2);
+                sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(
+                        1, Math.max(1, tabel.getRows().size() + 1), 0, column));
+                sheet.setColumnWidth(0, 6 * 256);
+                sheet.setColumnWidth(1, 14 * 256);
+                sheet.setColumnWidth(2, 32 * 256);
+                sheet.setColumnWidth(3, 28 * 256);
+                sheet.setColumnWidth(4, 14 * 256);
+                sheet.setColumnWidth(5, 18 * 256);
+                sheet.setColumnWidth(6, 18 * 256);
+                sheet.setColumnWidth(7, 18 * 256);
+                for (int i = 8; i < 8 + tabel.getDaysInMonth(); i++) sheet.setColumnWidth(i, 6 * 256);
+                for (int i = 8 + tabel.getDaysInMonth(); i <= column; i++) sheet.setColumnWidth(i, 16 * 256);
             }
 
             workbook.write(output);
@@ -360,6 +492,29 @@ public class TabelService {
         } catch (Exception ex) {
             throw new RuntimeException("Failed to export tabel", ex);
         }
+    }
+
+    private void mergeMarkerRun(Sheet sheet, Row row, Map<Integer, Object> daily,
+                                int firstDayColumn, int daysInMonth, String marker) {
+        int first = -1;
+        int last = -1;
+        for (int day = 1; day <= daysInMonth; day++) {
+            if (marker.equals(daily.get(day))) {
+                if (first < 0) first = day;
+                last = day;
+            } else if (first >= 0) {
+                break;
+            }
+        }
+        if (first < 0 || last <= first) return;
+        int from = firstDayColumn + first - 1;
+        int to = firstDayColumn + last - 1;
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(row.getRowNum(), row.getRowNum(), from, to));
+        row.getCell(from).setCellValue(marker);
+        CellStyle style = sheet.getWorkbook().createCellStyle();
+        style.setAlignment(org.apache.poi.ss.usermodel.HorizontalAlignment.CENTER);
+        style.setVerticalAlignment(org.apache.poi.ss.usermodel.VerticalAlignment.CENTER);
+        row.getCell(from).setCellStyle(style);
     }
 
     private CellStyle mcgDayStyle(Workbook workbook, IndexedColors color, String numberFormat) {
@@ -495,17 +650,6 @@ public class TabelService {
     private String buildFullName(Employee employee) {
         String fatherName = employee.getFatherName() == null ? "" : " " + employee.getFatherName();
         return employee.getLastName() + " " + employee.getFirstName() + fatherName;
-    }
-
-    private boolean isScheduledWorkingDay(
-            Employee employee,
-            LocalDate date,
-            DailyAttendanceSummary summary
-    ) {
-        if (summary != null && summary.getIsStandardDay() != null) {
-            return summary.getIsStandardDay();
-        }
-        return attendanceScheduleResolver.resolve(employee, date).workingDay();
     }
 
     private double round2(double value) {

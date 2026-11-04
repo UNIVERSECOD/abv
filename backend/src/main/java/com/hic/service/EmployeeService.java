@@ -231,9 +231,16 @@ public class EmployeeService {
         if (tenantId != null) {
             employee.setTenantId(tenantId);
         }
-        String employeeId = requestedEmployeeId != null && !requestedEmployeeId.isBlank()
-                ? requestedEmployeeId.trim()
-                : generateEmployeeId(tenantId);
+        String employeeId;
+        if (requestedEmployeeId != null && !requestedEmployeeId.isBlank()) {
+            employeeId = requestedEmployeeId.trim();
+        } else {
+            if (dto.getDeviceEmployeeNo() == null || dto.getDeviceEmployeeNo().isBlank()) {
+                throw new BadRequestException("Cihazdakı əməkdaş ID daxil edilməlidir");
+            }
+            employeeId = dto.getDeviceEmployeeNo().trim();
+            employee.setDeviceEmployeeNo(employeeId);
+        }
         validateEmployeeIdAvailable(tenantId, employeeId);
         employee.setEmployeeId(employeeId);
         if (employee.getEmploymentStatus() == null) {
@@ -334,6 +341,27 @@ public class EmployeeService {
     }
 
     public EmployeeTerminationResultDTO terminate(Long id) {
+        return terminate(id, AppTimeZone.today());
+    }
+
+    @Transactional
+    public EmployeeResponseDTO updateLeaveBalance(Long id, Integer days) {
+        if (days == null || days < 0) {
+            throw new BadRequestException("Məzuniyyət balansı 0 və ya daha böyük olmalıdır");
+        }
+        Long tenantId = TenantContext.getTenantId();
+        Employee employee = tenantId != null
+                ? employeeRepository.findByTenantIdAndId(tenantId, id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Employee", id))
+                : employeeRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
+        employee.setAnnualLeaveBalance(days);
+        employee.setLegacyLeaveBalanceOffset(0);
+        employee.setLeaveBalanceStartDate(AppTimeZone.today());
+        return toResponseDTO(employeeRepository.save(employee));
+    }
+
+    public EmployeeTerminationResultDTO terminate(Long id, LocalDate terminationDate) {
         Long contextTenantId = TenantContext.getTenantId();
         Employee employee = contextTenantId != null
                 ? employeeRepository.findByTenantIdAndId(contextTenantId, id)
@@ -341,6 +369,17 @@ public class EmployeeService {
                 : employeeRepository.findById(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
         Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : contextTenantId;
+
+        if (employee.getEmploymentStatus() != Employee.EmploymentStatus.TERMINATED) {
+            LocalDate effectiveDate = terminationDate != null ? terminationDate : AppTimeZone.today();
+            if (employee.getHireDate() != null && effectiveDate.isBefore(employee.getHireDate())) {
+                throw new BadRequestException("İşdən azad edilmə tarixi işə qəbul tarixindən əvvəl ola bilməz.");
+            }
+            if (effectiveDate.isAfter(AppTimeZone.today())) {
+                throw new BadRequestException("İşdən azad edilmə tarixi gələcək tarix ola bilməz.");
+            }
+            employee.setTerminationDate(effectiveDate);
+        }
 
         Set<Long> targetDeviceIds = new LinkedHashSet<>(getEmployeeDeviceIds(id));
         List<Long> employeeAreaIds = employeeAreaAssignmentService.getAreaIds(id);
@@ -373,6 +412,9 @@ public class EmployeeService {
             employee.setCardId(dto.getCardId());
         }
         employee.setSerialNumber(dto.getSerialNumber());
+        if (dto.getDeviceEmployeeNo() != null && !dto.getDeviceEmployeeNo().isBlank()) {
+            employee.setDeviceEmployeeNo(dto.getDeviceEmployeeNo().trim());
+        }
         employee.setContractNumber(dto.getContractNumber());
         employee.setBranchId(dto.getBranchId());
         employee.setDepartmentId(dto.getDepartmentId());
@@ -388,10 +430,16 @@ public class EmployeeService {
             employee.setGroupName(dto.getGroupName());
         }
         employee.setSalary(dto.getSalary());
+        employee.setNetSalary(dto.getNetSalary());
+        employee.setActualSalary(dto.getActualSalary());
+        employee.setPriorExperienceYears(dto.getPriorExperienceYears());
+        employee.setPriorExperienceMonths(dto.getPriorExperienceMonths());
+        employee.setPriorExperienceDays(dto.getPriorExperienceDays());
         employee.setHourlyRate(dto.getHourlyRate());
         employee.setAllowance(dto.getAllowance());
         employee.setEmergencyContact(dto.getEmergencyContact());
         employee.setAddress(dto.getAddress());
+        employee.setRegisteredAddress(dto.getRegisteredAddress());
         employee.setNotes(dto.getNotes());
         if (dto.getEmploymentStatus() != null) {
             employee.setEmploymentStatus(dto.getEmploymentStatus());
@@ -451,10 +499,16 @@ public class EmployeeService {
         dto.setFatherName(employee.getFatherName());
         dto.setGroupName(employee.getGroupName());
         dto.setSalary(employee.getSalary());
+        dto.setNetSalary(employee.getNetSalary());
+        dto.setActualSalary(employee.getActualSalary());
+        dto.setPriorExperienceYears(employee.getPriorExperienceYears());
+        dto.setPriorExperienceMonths(employee.getPriorExperienceMonths());
+        dto.setPriorExperienceDays(employee.getPriorExperienceDays());
         dto.setHourlyRate(employee.getHourlyRate());
         dto.setAllowance(employee.getAllowance());
         dto.setEmergencyContact(employee.getEmergencyContact());
         dto.setAddress(employee.getAddress());
+        dto.setRegisteredAddress(employee.getRegisteredAddress());
         dto.setNotes(employee.getNotes());
         dto.setArea(employee.getArea());
         dto.setShiftType(employee.getShiftType());

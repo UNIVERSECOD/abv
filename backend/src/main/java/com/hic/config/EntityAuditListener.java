@@ -12,7 +12,7 @@ import java.util.*;
 /** Records committed entity changes in the SAME database transaction. No raw DTOs or secrets. */
 public class EntityAuditListener implements PostInsertEventListener, PostUpdateEventListener, PostDeleteEventListener {
     private static final Map<String, Set<String>> FIELDS = Map.ofEntries(
-        fields("Employee", "employeeId firstName lastName fatherName branchId departmentId positionId hireDate contractEndDate annualLeaveDuration annualLeaveBalance salary hourlyRate shiftType timetableId employmentStatus"),
+        fields("Employee", "employeeId firstName lastName fatherName branchId departmentId positionId hireDate contractEndDate terminationDate annualLeaveDuration annualLeaveBalance salary hourlyRate shiftType timetableId employmentStatus"),
         fields("Branch", "name code city address status isHeadOffice"),
         fields("Department", "departmentName branchId timetableId"),
         fields("Position", "positionName departmentId"),

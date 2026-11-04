@@ -9,9 +9,13 @@ export const employeeApi = {
   getById: (id: number) => client.get<{ data: Employee }>(`/employees/${id}`),
   create: (data: Partial<Employee>) => client.post<{ data: Employee }>('/employees', data),
   update: (id: number, data: Partial<Employee>) => client.put<{ data: Employee }>(`/employees/${id}`, data),
+  updateLeaveBalance: (id: number, days: number) =>
+    client.put<{ data: Employee }>(`/employees/${id}/leave-balance`, null, { params: { days } }),
   delete: (id: number) => client.delete(`/employees/${id}`),
-  terminate: (id: number) =>
-    client.post<ApiResponse<EmployeeTerminationResult>>(`/employees/${id}/terminate`),
+  terminate: (id: number, terminationDate?: string) =>
+    client.post<ApiResponse<EmployeeTerminationResult>>(
+      `/employees/${id}/terminate`, terminationDate ? { terminationDate } : undefined,
+    ),
   getByStatus: (status: Employee['employmentStatus']) =>
     client.get<ApiResponse<Employee[]>>(`/employees/status/${status}`),
   search: (q: string, page = 0, size = 20) =>

@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDate;
 
 @Data
 public class TabelMonthlyDTO {
@@ -21,13 +22,26 @@ public class TabelMonthlyDTO {
     @Data
     public static class RowDTO {
         private Long employeePk;
+        private String employeeCode;
         private String fin;
         private String fullName;
         private String position;
+        private String areaName;
+        private String workTime;
+        private String workSchedule;
         private EmploymentStatus employmentStatus;
+        private LocalDate terminationDate;
         private Map<Integer, Object> daily;
+        private int normWorkingDays;
+        private double normHours;
         private int workingDays;
         private double totalHours;
+        private int extraWorkDays;
+        private int totalWorkedDays;
+        private int leaveDays;
+        private int restHolidayDays;
+        private int businessTripDays;
+        private int sickDays;
         private Map<Integer, McgDayDTO> mcgDaily;
         private int fullDays;
         private double partialHours;

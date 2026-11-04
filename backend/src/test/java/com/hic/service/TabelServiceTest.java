@@ -15,6 +15,8 @@ import com.hic.repository.EmployeeRepository;
 import com.hic.repository.HolidayPermissionRepository;
 import com.hic.repository.LeaveRequestRepository;
 import com.hic.repository.PositionRepository;
+import com.hic.repository.BranchRepository;
+import com.hic.repository.TimetableRepository;
 import com.hic.util.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -35,6 +37,7 @@ import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -47,6 +50,10 @@ class TabelServiceTest {
     private EmployeeAreaRepository employeeAreaRepository;
     @Mock
     private PositionRepository positionRepository;
+    @Mock
+    private BranchRepository branchRepository;
+    @Mock
+    private TimetableRepository timetableRepository;
     @Mock
     private DailyAttendanceSummaryRepository dailyAttendanceSummaryRepository;
     @Mock
@@ -91,18 +98,46 @@ class TabelServiceTest {
         var row = tabelService.getMonthlyTabel(2026, 4, null, null, null, null).getRows().get(0);
         assertEquals(39.0, row.getTotalHours());
         assertEquals(8, row.getWorkingDays());
-        assertNull(row.getDaily().get(9));
+        assertEquals("İ", row.getDaily().get(9));
         try (var book = WorkbookFactory.create(new ByteArrayInputStream(
                 tabelService.exportMonthlyTabel(2026, 4, null, null, null, null)))) {
             var excel = book.getSheetAt(0).getRow(2);
             for (int i = 0; i < minutes.length; i++) {
                 assertEquals(expected[i], row.getDaily().get(i + 1));
-                assertEquals(expected[i], excel.getCell(i + 4).getNumericCellValue());
+                assertEquals(expected[i], excel.getCell(i + 8).getNumericCellValue());
                 assertEquals(minutes[i] / 60.0, summaries.get(i).getHoursWorked());
             }
-            assertEquals(39.0, excel.getCell(35).getNumericCellValue());
+            assertEquals(39.0, excel.getCell(41).getNumericCellValue());
         }
         org.mockito.Mockito.verifyNoInteractions(mcgProjectionService);
+    }
+
+    @Test
+    void terminationDateMarksAndMergesTheRemainingMonthWithoutCountingIt() throws Exception {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee();
+        employee.setId(11L); employee.setTenantId(7L); employee.setEmployeeId("ABV-11");
+        employee.setFirstName("Ayla"); employee.setLastName("Aliyeva");
+        employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
+        employee.setTerminationDate(LocalDate.of(2026, 4, 10));
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged()))
+                .thenReturn(new PageImpl<>(List.of(employee)));
+        when(attendanceScheduleResolver.resolve(any(), any())).thenReturn(
+                new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", true,
+                        LocalTime.of(8, 0), LocalTime.of(17, 0), 60, 0, 0));
+
+        var row = tabelService.getMonthlyTabel(2026, 4, null, null, null, null).getRows().get(0);
+        assertEquals("i/azad", row.getDaily().get(10));
+        assertEquals("i/azad", row.getDaily().get(30));
+        assertEquals(0, row.getWorkingDays());
+
+        try (var book = WorkbookFactory.create(new ByteArrayInputStream(
+                tabelService.exportMonthlyTabel(2026, 4, null, null, null, null)))) {
+            var sheet = book.getSheet("Tabel");
+            assertTrue(sheet.getMergedRegions().stream().anyMatch(region ->
+                    region.getFirstRow() == 2 && region.getFirstColumn() == 17 && region.getLastColumn() == 37));
+            assertEquals("i/azad", sheet.getRow(2).getCell(17).getStringCellValue());
+        }
     }
 
     @Test
@@ -153,6 +188,7 @@ class TabelServiceTest {
                 new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true));
         var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
         assertEquals("Annual, Sick", data.getLeaveLegend().get("M"));
+        assertEquals(3, data.getRows().get(0).getLeaveDays());
     }
 
     @Test
@@ -248,16 +284,16 @@ class TabelServiceTest {
         assertEquals(9.0, row.getDaily().get(3));
         assertEquals(8.0, row.getDaily().get(4));
         assertEquals("M", row.getDaily().get(5));
-        assertEquals("Q/I", row.getDaily().get(6));
-        assertEquals("Q/I", row.getDaily().get(7));
-        assertNull(row.getDaily().get(11));
+        assertEquals("B", row.getDaily().get(6));
+        assertEquals("İ", row.getDaily().get(7));
+        assertEquals("İ", row.getDaily().get(11));
         assertEquals(2, row.getWorkingDays());
         assertEquals(17.0, row.getTotalHours());
         assertEquals(TabelMonthlyDTO.CalculationMode.STANDARD, result.getCalculationMode());
         org.mockito.Mockito.verifyNoInteractions(mcgProjectionService);
         try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(
                 tabelService.exportMonthlyTabel(2026, 4, 3L, 4L, 5L, "FIN123")))) {
-            assertEquals("M", workbook.getSheet("Tabel").getRow(2).getCell(8).getStringCellValue());
+            assertEquals("M", workbook.getSheet("Tabel").getRow(2).getCell(12).getStringCellValue());
         } catch (java.io.IOException exception) {
             throw new AssertionError(exception);
         }
@@ -395,7 +431,7 @@ class TabelServiceTest {
         byte[] excel = tabelService.exportMonthlyTabel(2026, 4, 3L, null, null, null);
         try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
             var sheet = workbook.getSheet("Tabel");
-            assertEquals(36, sheet.getRow(1).getLastCellNum(),
+            assertEquals(48, sheet.getRow(1).getLastCellNum(),
                     "Excel-də status və terminationDate üçün əlavə sütun olmamalıdır");
             var nameCell = sheet.getRow(2).getCell(2);
             var font = workbook.getFontAt(nameCell.getCellStyle().getFontIndex());

@@ -28,11 +28,10 @@ public class TabelController {
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long departmentId,
             @RequestParam(required = false) Long positionId,
-            @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "STANDARD") TabelMonthlyDTO.CalculationMode mode
+            @RequestParam(required = false) String search
     ) {
         return ResponseEntity.ok(ApiResponse.success("OK", tabelService.getMonthlyTabel(
-                year, month, branchId, departmentId, positionId, search, mode
+                year, month, branchId, departmentId, positionId, search
         )));
     }
 
@@ -43,13 +42,11 @@ public class TabelController {
             @RequestParam(required = false) Long branchId,
             @RequestParam(required = false) Long departmentId,
             @RequestParam(required = false) Long positionId,
-            @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "STANDARD") TabelMonthlyDTO.CalculationMode mode
+            @RequestParam(required = false) String search
     ) {
-        byte[] file = tabelService.exportMonthlyTabel(year, month, branchId, departmentId, positionId, search, mode);
+        byte[] file = tabelService.exportMonthlyTabel(year, month, branchId, departmentId, positionId, search);
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename="
-                        + (mode == TabelMonthlyDTO.CalculationMode.MCG ? "attendra-mcg-tabel.xlsx" : "tabel.xlsx"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=attendra-tabel.xlsx")
                 .contentType(MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(file);
     }

@@ -75,6 +75,12 @@ public class EmployeeController {
         return ResponseEntity.ok(ApiResponse.success(employeeService.update(id, dto)));
     }
 
+    @PutMapping("/{id}/leave-balance")
+    public ResponseEntity<ApiResponse<EmployeeResponseDTO>> updateLeaveBalance(
+            @PathVariable Long id, @RequestParam Integer days) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.updateLeaveBalance(id, days)));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         employeeService.delete(id);
@@ -82,8 +88,12 @@ public class EmployeeController {
     }
 
     @PostMapping("/{id}/terminate")
-    public ResponseEntity<ApiResponse<EmployeeTerminationResultDTO>> terminate(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success(employeeService.terminate(id)));
+    public ResponseEntity<ApiResponse<EmployeeTerminationResultDTO>> terminate(
+            @PathVariable Long id,
+            @RequestBody(required = false) com.hic.dto.EmployeeTerminationRequestDTO request) {
+        return ResponseEntity.ok(ApiResponse.success(request == null
+                ? employeeService.terminate(id)
+                : employeeService.terminate(id, request.getTerminationDate())));
     }
 
     @GetMapping("/{id}/doors")

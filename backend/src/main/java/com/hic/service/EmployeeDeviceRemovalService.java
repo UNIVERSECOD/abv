@@ -22,6 +22,7 @@ public class EmployeeDeviceRemovalService {
 
     public EmployeeTerminationResultDTO terminate(Employee employee, Set<Long> targetIds) {
         Long tenantId = Objects.requireNonNull(employee.getTenantId(), "Əməkdaşın şirkəti tapılmadı");
+        boolean newlyTerminated = employee.getEmploymentStatus() != Employee.EmploymentStatus.TERMINATED;
         transaction.executeWithoutResult(tx -> {
             // Serializes simultaneous requests so the same employee/device job is never duplicated.
             Employee locked = employees.lockForTermination(tenantId, employee.getId()).orElseThrow();
@@ -46,6 +47,11 @@ public class EmployeeDeviceRemovalService {
                 jobs.save(job);
             }
             locked.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
+            if (newlyTerminated && locked.getTerminationDate() == null) {
+                locked.setTerminationDate(employee.getTerminationDate() != null
+                        ? employee.getTerminationDate()
+                        : AppTimeZone.today());
+            }
             employees.saveAndFlush(locked);
         });
         for (var job : jobs.findByTenantIdAndEmployeeIdOrderById(tenantId, employee.getId())) {

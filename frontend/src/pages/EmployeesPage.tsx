@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import EmployeeDetailModal from '../components/EmployeeDetailModal.tsx'
 import EmployeeAvatar from '../components/EmployeeAvatar.tsx'
@@ -31,6 +31,7 @@ const SHIFT_TYPE_LABELS: Record<string, string> = {
 }
 
 interface EmployeeFormData {
+  deviceEmployeeNo: string
   firstName: string
   lastName: string
   fatherName: string
@@ -53,10 +54,16 @@ interface EmployeeFormData {
   timetableId: number | ''
   shiftType: string
   salary: number | ''
+  netSalary: number | ''
+  actualSalary: number | ''
+  priorExperienceYears: number | ''
+  priorExperienceMonths: number | ''
+  priorExperienceDays: number | ''
   hourlyRate: number | ''
   allowance: string
   emergencyContact: string
   address: string
+  registeredAddress: string
   notes: string
   area: string
 }
@@ -72,6 +79,7 @@ const extractStatusCode = (value: unknown): number | undefined => {
 }
 
 const defaultForm: EmployeeFormData = {
+  deviceEmployeeNo: '',
   firstName: '',
   lastName: '',
   fatherName: '',
@@ -94,15 +102,49 @@ const defaultForm: EmployeeFormData = {
   timetableId: '',
   shiftType: '',
   salary: '',
+  netSalary: '',
+  actualSalary: '',
+  priorExperienceYears: '',
+  priorExperienceMonths: '',
+  priorExperienceDays: '',
   hourlyRate: '',
   allowance: '',
   emergencyContact: '',
   address: '',
+  registeredAddress: '',
   notes: '',
   area: '',
 }
 
 const AVATAR_COLORS = ['#6366f1', '#a855f7', '#10b981', '#f59e0b', '#ef4444', '#3b82f6']
+
+const experienceFromHireDate = (hireDate: string) => {
+  if (!hireDate) return { years: 0, months: 0, days: 0 }
+  const start = new Date(`${hireDate}T00:00:00`)
+  const end = new Date()
+  if (Number.isNaN(start.getTime()) || start > end) return { years: 0, months: 0, days: 0 }
+  let years = end.getFullYear() - start.getFullYear()
+  let months = end.getMonth() - start.getMonth()
+  let days = end.getDate() - start.getDate()
+  if (days < 0) {
+    months -= 1
+    days += new Date(end.getFullYear(), end.getMonth(), 0).getDate()
+  }
+  if (months < 0) { years -= 1; months += 12 }
+  return { years, months, days }
+}
+
+const addExperience = (a: { years: number; months: number; days: number }, b: { years: number; months: number; days: number }) => {
+  let days = a.days + b.days
+  let months = a.months + b.months + Math.floor(days / 30)
+  days %= 30
+  const years = a.years + b.years + Math.floor(months / 12)
+  months %= 12
+  return { years, months, days }
+}
+
+const experienceLabel = (value: { years: number; months: number; days: number }) =>
+  `${value.years} il, ${value.months} ay, ${value.days} gün`
 
 function getAvatarColor(name: string) {
   let hash = 0
@@ -137,10 +179,18 @@ export default function EmployeesPage() {
   const [currentStep, setCurrentStep] = useState(1)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [form, setForm] = useState<EmployeeFormData>(defaultForm)
+  const companyExperience = experienceFromHireDate(form.hireDate)
+  const previousExperience = {
+    years: Number(form.priorExperienceYears || 0),
+    months: Number(form.priorExperienceMonths || 0),
+    days: Number(form.priorExperienceDays || 0),
+  }
+  const totalExperience = addExperience(previousExperience, companyExperience)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<EmployeeFormErrors>({})
   const [deleteConfirm, setDeleteConfirm] = useState<Employee | null>(null)
+  const [terminationDate, setTerminationDate] = useState(todayInAppTimeZone())
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deletingEmployee, setDeletingEmployee] = useState(false)
   const [employeeView, setEmployeeView] = useState<'active' | 'terminated'>('active')
@@ -222,11 +272,6 @@ export default function EmployeesPage() {
     return () => { cancelled = true; window.clearInterval(interval) }
   }, [employeeView])
 
-  const employeeIdPreview = useMemo(() => {
-    if (editingEmployee?.employeeId) return editingEmployee.employeeId
-    return `EMP${String((totalElements || employees.length) + 1).padStart(4, '0')}`
-  }, [editingEmployee, totalElements, employees.length])
-
   const branchLabelById = (branchId?: number) => {
     if (!branchId) return '—'
     return branches.find((b) => b.id === branchId)?.name || '—'
@@ -268,6 +313,7 @@ export default function EmployeesPage() {
     const imageLoadToken = ++wizardImageLoadTokenRef.current
     setEditingEmployee(emp)
     setForm({
+      deviceEmployeeNo: emp.deviceEmployeeNo || emp.employeeId || '',
       firstName: emp.firstName,
       lastName: emp.lastName,
       fatherName: emp.fatherName || '',
@@ -290,10 +336,16 @@ export default function EmployeesPage() {
       timetableId: emp.timetableId || '',
       shiftType: emp.shiftType || '',
       salary: emp.salary ?? '',
+      netSalary: emp.netSalary ?? '',
+      actualSalary: emp.actualSalary ?? '',
+      priorExperienceYears: emp.priorExperienceYears ?? '',
+      priorExperienceMonths: emp.priorExperienceMonths ?? '',
+      priorExperienceDays: emp.priorExperienceDays ?? '',
       hourlyRate: emp.hourlyRate ?? '',
       allowance: emp.allowance || '',
       emergencyContact: emp.emergencyContact || '',
       address: emp.address || '',
+      registeredAddress: emp.registeredAddress || '',
       notes: emp.notes || '',
       area: emp.area || '',
     })
@@ -431,6 +483,7 @@ export default function EmployeesPage() {
     const errors: EmployeeFormErrors = {}
 
     if (step === 1) {
+      if (!editingEmployee && !form.deviceEmployeeNo.trim()) errors.deviceEmployeeNo = 'Cihazdakı əməkdaş ID daxil edilməlidir.'
       if (!form.finNumber.trim()) errors.finNumber = 'FIN daxil edilməlidir.'
       if (!form.firstName.trim()) errors.firstName = 'Ad daxil edilməlidir.'
       if (!form.lastName.trim()) errors.lastName = 'Soyad daxil edilməlidir.'
@@ -532,6 +585,7 @@ export default function EmployeesPage() {
     setFormError(null)
     try {
       const payload: Partial<Employee> = {
+        deviceEmployeeNo: form.deviceEmployeeNo.trim() || undefined,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         fatherName: form.fatherName,
@@ -554,10 +608,16 @@ export default function EmployeesPage() {
         timetableId: Number(form.timetableId),
         shiftType: form.shiftType,
         salary: form.salary === '' ? undefined : Number(form.salary),
+        netSalary: form.netSalary === '' ? undefined : Number(form.netSalary),
+        actualSalary: form.actualSalary === '' ? undefined : Number(form.actualSalary),
+        priorExperienceYears: form.priorExperienceYears === '' ? undefined : Number(form.priorExperienceYears),
+        priorExperienceMonths: form.priorExperienceMonths === '' ? undefined : Number(form.priorExperienceMonths),
+        priorExperienceDays: form.priorExperienceDays === '' ? undefined : Number(form.priorExperienceDays),
         hourlyRate: form.hourlyRate === '' ? undefined : Number(form.hourlyRate),
         allowance: form.allowance,
         emergencyContact: form.emergencyContact,
         address: form.address,
+        registeredAddress: form.registeredAddress,
         notes: form.notes,
         area: form.area,
       }
@@ -654,7 +714,7 @@ export default function EmployeesPage() {
     setDeletingEmployee(true)
     setDeleteError(null)
     try {
-      const result = await terminateEmployee(deleteConfirm.id)
+      const result = await terminateEmployee(deleteConfirm.id, terminationDate)
       setDeleteConfirm(null)
       if (selectedEmployee?.id === deleteConfirm.id) {
         closeProfile()
@@ -683,12 +743,14 @@ export default function EmployeesPage() {
 
   const openDeleteConfirm = (employee: Employee) => {
     setDeleteError(null)
+    setTerminationDate(todayInAppTimeZone())
     setDeleteConfirm(employee)
   }
 
   const closeDeleteConfirm = () => {
     if (deletingEmployee) return
     setDeleteError(null)
+    setTerminationDate(todayInAppTimeZone())
     setDeleteConfirm(null)
   }
 
@@ -1177,8 +1239,9 @@ export default function EmployeesPage() {
             {currentStep === 1 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">DAXİLİ ƏMƏKDAŞ ID</label>
-                  <input value={employeeIdPreview} readOnly className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-gray-50 text-sm" />
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">CİHAZDAKI ƏMƏKDAŞ ID {!editingEmployee && <span className="text-red-600">*</span>}</label>
+                  <input value={form.deviceEmployeeNo} onChange={(e) => setFormField('deviceEmployeeNo', e.target.value)} disabled={Boolean(editingEmployee)} className={`w-full border rounded-lg px-3 py-2 text-sm ${fieldErrors.deviceEmployeeNo ? 'border-red-500' : 'border-gray-300'} disabled:bg-gray-50`} />
+                  {fieldErrors.deviceEmployeeNo && <p className="mt-1 text-xs text-red-600">{fieldErrors.deviceEmployeeNo}</p>}
                 </div>
                 <div>
                   <label htmlFor="employee-fin" className="block text-xs font-semibold text-gray-500 mb-1">
@@ -1254,7 +1317,11 @@ export default function EmployeesPage() {
                   <input value={form.emergencyContact} onChange={(e) => setFormField('emergencyContact', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">ÜNVAN</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">QEYDİYYATDA OLDUĞU ÜNVAN</label>
+                  <input value={form.registeredAddress} onChange={(e) => setFormField('registeredAddress', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">FAKTİKİ YAŞAYIŞ ÜNVANI</label>
                   <input value={form.address} onChange={(e) => setFormField('address', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div className="md:col-span-2">
@@ -1365,16 +1432,36 @@ export default function EmployeesPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">MÜQAVİLƏ NÖMRƏSİ</label>
-                  <input value={form.contractNumber} onChange={(e) => setFormField('contractNumber', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                </div>
-                <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">İŞƏ BAŞLAMA TARİXİ</label>
                   <input type="date" value={form.hireDate} onChange={(e) => setFormField('hireDate', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">MÜQAVİLƏ BİTMƏ TARİXİ</label>
-                  <input type="date" value={form.contractEndDate} onChange={(e) => setFormField('contractEndDate', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">ŞİRKƏTDƏKİ İŞ STAJI</label>
+                  <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">{experienceLabel(companyExperience)}</div>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">İŞƏ QƏBUL OLUNARKƏN ƏVVƏLKİ İŞ STAJI (KÖNÜLLÜ)</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <input type="number" min="0" placeholder="İl" value={form.priorExperienceYears} onChange={(e) => setFormField('priorExperienceYears', e.target.value === '' ? '' : Number(e.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                    <input type="number" min="0" max="11" placeholder="Ay" value={form.priorExperienceMonths} onChange={(e) => setFormField('priorExperienceMonths', e.target.value === '' ? '' : Number(e.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                    <input type="number" min="0" max="30" placeholder="Gün" value={form.priorExperienceDays} onChange={(e) => setFormField('priorExperienceDays', e.target.value === '' ? '' : Number(e.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">ÜMUMİ İŞ STAJI</label>
+                  <div className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">{experienceLabel(totalExperience)}</div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">GROSS ƏMƏK HAQQI</label>
+                  <input type="number" min="0" step="0.01" value={form.salary} onChange={(e) => setFormField('salary', e.target.value === '' ? '' : Number(e.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">NET ƏMƏK HAQQI</label>
+                  <input type="number" min="0" step="0.01" value={form.netSalary} onChange={(e) => setFormField('netSalary', e.target.value === '' ? '' : Number(e.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">FAKTİKİ ƏMƏK HAQQI</label>
+                  <input type="number" min="0" step="0.01" value={form.actualSalary} onChange={(e) => setFormField('actualSalary', e.target.value === '' ? '' : Number(e.target.value))} className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">İLLİK MƏZUNİYYƏT MÜDDƏTİ</label>
@@ -1483,6 +1570,20 @@ export default function EmployeesPage() {
                 <strong>{deleteConfirm.firstName} {deleteConfirm.lastName}</strong> adlı əməkdaşı işdən çıxarmaq istədiyinizdən əminsiniz? Əməkdaş əsas siyahıdan çıxacaq və təyin olunduğu cihazlardan silinəcək. Offline cihazlar üçün silinmə avtomatik təkrar ediləcək. Silinənədək həmin cihazlarda keçid imkanı qala bilər. Köhnə Tabel və profil məlumatları saxlanılacaq.
               </p>
             </div>
+            <label className="mb-4 block text-sm font-medium text-gray-700">
+              İşdən azad edilmə tarixi
+              <input
+                type="date"
+                value={terminationDate}
+                min={deleteConfirm.hireDate}
+                max={todayInAppTimeZone()}
+                onChange={(event) => setTerminationDate(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
+              />
+              <span className="mt-1 block text-xs font-normal text-gray-500">
+                Bu tarixdən ayın sonuna qədər Tabeldə “i/azad” göstəriləcək.
+              </span>
+            </label>
             {deleteError && (
               <p className="mb-4 text-sm text-red-600" role="alert">{deleteError}</p>
             )}

@@ -82,6 +82,9 @@ public class Employee {
     @Column(name = "contract_end_date")
     private LocalDate contractEndDate;
 
+    @Column(name = "termination_date")
+    private LocalDate terminationDate;
+
     @Column(name = "annual_leave_duration")
     private Integer annualLeaveDuration;
 
@@ -107,6 +110,21 @@ public class Employee {
     @Column(name = "salary", precision = 12, scale = 2)
     private BigDecimal salary;
 
+    @Column(name = "net_salary", precision = 12, scale = 2)
+    private BigDecimal netSalary;
+
+    @Column(name = "actual_salary", precision = 12, scale = 2)
+    private BigDecimal actualSalary;
+
+    @Column(name = "prior_experience_years")
+    private Integer priorExperienceYears;
+
+    @Column(name = "prior_experience_months")
+    private Integer priorExperienceMonths;
+
+    @Column(name = "prior_experience_days")
+    private Integer priorExperienceDays;
+
     @Column(name = "hourly_rate", precision = 10, scale = 2)
     private BigDecimal hourlyRate;
 
@@ -118,6 +136,9 @@ public class Employee {
 
     @Column(name = "address")
     private String address;
+
+    @Column(name = "registered_address")
+    private String registeredAddress;
 
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;

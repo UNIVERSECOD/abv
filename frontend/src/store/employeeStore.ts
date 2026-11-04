@@ -12,7 +12,7 @@ interface EmployeeState {
   fetchEmployees: (page?: number, size?: number) => Promise<boolean>
   createEmployee: (data: Partial<Employee>) => Promise<void>
   updateEmployee: (id: number, data: Partial<Employee>) => Promise<void>
-  terminateEmployee: (id: number) => Promise<EmployeeTerminationResult>
+  terminateEmployee: (id: number, terminationDate: string) => Promise<EmployeeTerminationResult>
 }
 
 export const useEmployeeStore = create<EmployeeState>((set, get) => ({
@@ -48,8 +48,8 @@ export const useEmployeeStore = create<EmployeeState>((set, get) => ({
     await employeeApi.update(id, data)
     await get().fetchEmployees(get().currentPage)
   },
-  terminateEmployee: async (id) => {
-    const response = await employeeApi.terminate(id)
+  terminateEmployee: async (id, terminationDate) => {
+    const response = await employeeApi.terminate(id, terminationDate)
     await get().fetchEmployees(get().currentPage)
     return response.data.data
   },

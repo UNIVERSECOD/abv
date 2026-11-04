@@ -66,15 +66,22 @@ export interface Employee {
   areaIds?: number[]
   areaNames?: string[]
   contractEndDate?: string
+  terminationDate?: string
   annualLeaveDuration?: number
   annualLeaveBalance?: number
   leaveBalanceStartDate?: string
   groupName?: string
   salary?: number
+  netSalary?: number
+  actualSalary?: number
+  priorExperienceYears?: number
+  priorExperienceMonths?: number
+  priorExperienceDays?: number
   hourlyRate?: number
   allowance?: string
   emergencyContact?: string
   address?: string
+  registeredAddress?: string
   notes?: string
   faceImageUrl?: string
   departmentId?: number
@@ -468,7 +475,6 @@ export interface AttendanceOverviewRow extends Omit<AttendanceReportRow, 'status
 }
 
 export interface TabelFilters {
-  mode?: 'STANDARD' | 'MCG'
   year: number
   month: number
   branchId?: number
@@ -479,35 +485,31 @@ export interface TabelFilters {
 
 export interface TabelRow {
   employeePk: number
+  employeeCode?: string
   fin?: string
   fullName: string
   position: string
+  areaName: string
+  workTime: string
+  workSchedule: string
   employmentStatus: Employee['employmentStatus']
+  terminationDate?: string
   daily: Record<string, number | string | null>
+  normWorkingDays: number
+  normHours: number
   workingDays: number
   totalHours: number
-  mcgDaily?: Record<string, McgTabelDay>
-  fullDays?: number
-  partialHours?: number
-  overtimeHours?: number
-}
-
-export interface McgTabelDay {
-  fullDay: boolean
-  workedMinutes: number
-  regularMinutes: number
-  overtimeMinutes: number
-  permissionMinutes: number
-  creditedPermissionMinutes: number
-  status: string
-  sourceVerified: boolean
-  expectedMinutes: number
-  scheduledDayOff: boolean
+  extraWorkDays: number
+  totalWorkedDays: number
+  leaveDays: number
+  restHolidayDays: number
+  businessTripDays: number
+  sickDays: number
 }
 
 export interface TabelMonthlyData {
   leaveLegend?: Record<string, string>
-  calculationMode: 'STANDARD' | 'MCG'
+  calculationMode: 'STANDARD'
   year: number
   month: number
   daysInMonth: number

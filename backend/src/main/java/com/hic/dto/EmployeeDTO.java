@@ -4,6 +4,8 @@ import com.hic.model.Employee.EmploymentStatus;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -31,6 +33,7 @@ public class EmployeeDTO {
     private String faceId;
     private String cardId;
     private String serialNumber;
+    private String deviceEmployeeNo;
     private String contractNumber;
     private Long branchId;
     private List<Long> areaIds;
@@ -47,10 +50,16 @@ public class EmployeeDTO {
     private String fatherName;
     private String groupName;
     private BigDecimal salary;
+    private BigDecimal netSalary;
+    private BigDecimal actualSalary;
+    @Min(0) private Integer priorExperienceYears;
+    @Min(0) @Max(11) private Integer priorExperienceMonths;
+    @Min(0) @Max(30) private Integer priorExperienceDays;
     private BigDecimal hourlyRate;
     private String allowance;
     private String emergencyContact;
     private String address;
+    private String registeredAddress;
     private String notes;
     private String area;
     private String shiftType;

@@ -236,9 +236,9 @@ export default function DevicesPage() {
     setSyncFeedback(null)
     try {
       await syncDevice(id)
-      const message = 'Cihaz və davamiyyət məlumatları sinxronlaşdırıldı.'
+      const message = 'Cihaz onlayndır. Davamiyyət tarixçəsi arxa planda sinxronlaşdırılır.'
       setSyncFeedback({ type: 'success', message })
-      toast.success('Sinxronizasiya tamamlandı', message)
+      toast.success('Sinxronizasiya başladı', message)
     } catch (error: unknown) {
       const status = (error as { response?: { status?: number } })?.response?.status
       const message = status === 502 || status === 503

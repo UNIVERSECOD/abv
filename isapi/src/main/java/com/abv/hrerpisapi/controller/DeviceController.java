@@ -14,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -155,20 +154,15 @@ public class DeviceController {
     public DeviceSyncResponse sync(@PathVariable Long id) {
         DeviceEntity device = requireDevice(id);
         deviceWorkerService.startDevice(device);
-        try {
-            int recordsSynced = historyPoller.pollDevice(device);
-            return new DeviceSyncResponse(true, "Device history synchronized", recordsSynced);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Device sync was interrupted", e);
-        } catch (IOException e) {
+        IsapiClient.DeviceStatusCheckResult status = isapiClient.checkDeviceStatus(device);
+        if (!status.online()) {
             deviceCursorService.markOffline(device.getId());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Device history sync failed: " + e.getMessage(), e);
-        } catch (IsapiClient.AcsEventHistoryNotSupportedException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
-                    "Device history sync failed: " + e.getMessage(), e);
+                    "Device connection failed with HTTP " + status.statusCode());
         }
+        deviceCursorService.markOnline(device.getId());
+        historyPoller.pollDeviceInBackground(device);
+        return new DeviceSyncResponse(true, "Device is online; history synchronization started", 0);
     }
 
     @GetMapping("/{id}/status")

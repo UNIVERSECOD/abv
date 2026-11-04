@@ -62,6 +62,8 @@ class AcsEventHistoryPollerTest {
         cursor.setLastEventTime(OffsetDateTime.now().minusMinutes(5));
 
         when(cursorRepository.findById(1L)).thenReturn(Optional.of(cursor));
+        when(isapiClient.checkDeviceStatus(device))
+                .thenReturn(new IsapiClient.DeviceStatusCheckResult(true, 200, "OK"));
         when(isapiClient.searchAcsEvents(eq(device), any(OffsetDateTime.class), eq(42L), eq(30)))
                 .thenReturn(List.of());
 
@@ -76,18 +78,20 @@ class AcsEventHistoryPollerTest {
     }
 
     @Test
-    void scheduledPoll_connectionFailure_marksDeviceOffline() throws Exception {
+    void scheduledPoll_historyFailure_keepsSuccessfulConnectivityStatus() throws Exception {
         DeviceEntity device = new DeviceEntity();
         device.setId(2L);
         device.setIp("192.168.1.20");
 
         when(deviceRepository.findByEnabledTrue()).thenReturn(List.of(device));
         when(cursorRepository.findById(2L)).thenReturn(Optional.empty());
+        when(isapiClient.checkDeviceStatus(device))
+                .thenReturn(new IsapiClient.DeviceStatusCheckResult(true, 200, "OK"));
         when(isapiClient.searchAcsEvents(eq(device), any(OffsetDateTime.class), eq(0L), eq(30)))
                 .thenThrow(new IOException("Connection refused"));
 
         poller.poll();
 
-        verify(deviceCursorService).markOffline(2L);
+        verify(deviceCursorService).markOnline(2L);
     }
 }

@@ -15,7 +15,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -112,31 +111,35 @@ class DeviceControllerTest {
     }
 
     @Test
-    void sync_pollsDeviceHistoryImmediately() throws Exception {
+    void sync_marksReachableDeviceOnlineAndStartsHistoryInBackground() {
         DeviceEntity device = new DeviceEntity();
         device.setId(1L);
 
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-        when(historyPoller.pollDevice(device)).thenReturn(3);
+        when(isapiClient.checkDeviceStatus(device))
+                .thenReturn(new IsapiClient.DeviceStatusCheckResult(true, 200, "OK"));
 
         DeviceController.DeviceSyncResponse response = controller.sync(1L);
 
         verify(deviceWorkerService).startDevice(device);
-        verify(historyPoller).pollDevice(device);
+        verify(deviceCursorService).markOnline(1L);
+        verify(historyPoller).pollDeviceInBackground(device);
         assertThat(response.success()).isTrue();
-        assertThat(response.recordsSynced()).isEqualTo(3);
+        assertThat(response.recordsSynced()).isZero();
     }
 
     @Test
-    void sync_connectionFailure_marksDeviceOffline() throws Exception {
+    void sync_connectionFailure_marksDeviceOffline() {
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
-        when(historyPoller.pollDevice(device)).thenThrow(new IOException("Connection refused"));
+        when(isapiClient.checkDeviceStatus(device))
+                .thenReturn(new IsapiClient.DeviceStatusCheckResult(false, 401, "Unauthorized"));
 
         assertThatThrownBy(() -> controller.sync(1L))
                 .isInstanceOf(ResponseStatusException.class);
 
         verify(deviceCursorService).markOffline(1L);
+        verify(historyPoller, never()).pollDeviceInBackground(device);
     }
 
     @Test

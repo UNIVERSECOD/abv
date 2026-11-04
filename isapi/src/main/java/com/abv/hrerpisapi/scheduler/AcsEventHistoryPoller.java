@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -20,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Runs every minute and fills any events that were missed while the
@@ -44,6 +46,7 @@ public class AcsEventHistoryPoller {
     private final DeviceCursorService deviceCursorService;
 
     private final Map<Long, OffsetDateTime> historyPollingDisabledUntil = new ConcurrentHashMap<>();
+    private final Map<Long, ReentrantLock> devicePollLocks = new ConcurrentHashMap<>();
 
     @Scheduled(fixedDelay = 60_000)
     public void poll() {
@@ -58,12 +61,13 @@ public class AcsEventHistoryPoller {
             if (disabled) return;
 
             try {
-                pollDevice(device);
+                if (!pollDeviceIfIdle(device)) {
+                    log.info("HistoryPoller: device={} skipped because synchronization is already running", device.getId());
+                }
             } catch (IsapiClient.AcsEventHistoryNotSupportedException e) {
                 deviceCursorService.markOnline(device.getId());
                 disableHistoryPolling(device);
             } catch (IOException e) {
-                deviceCursorService.markOffline(device.getId());
                 logPollFailure(device, e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -76,6 +80,57 @@ public class AcsEventHistoryPoller {
 
     /** Runs one immediate history synchronization and returns successfully ingested event count. */
     public int pollDevice(DeviceEntity device) throws IOException, InterruptedException {
+        ReentrantLock lock = lockFor(device.getId());
+        lock.lockInterruptibly();
+        try {
+            return pollDeviceLocked(device);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Starts a single background synchronization; repeated requests for the same device are ignored. */
+    @Async
+    public void pollDeviceInBackground(DeviceEntity device) {
+        try {
+            if (!pollDeviceIfIdle(device)) {
+                log.info("HistoryPoller: device={} background synchronization already running", device.getId());
+            }
+        } catch (IsapiClient.AcsEventHistoryNotSupportedException e) {
+            deviceCursorService.markOnline(device.getId());
+            disableHistoryPolling(device);
+        } catch (IOException e) {
+            logPollFailure(device, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logPollFailure(device, e);
+        } catch (Exception e) {
+            logPollFailure(device, e);
+        }
+    }
+
+    boolean pollDeviceIfIdle(DeviceEntity device) throws IOException, InterruptedException {
+        ReentrantLock lock = lockFor(device.getId());
+        if (!lock.tryLock()) {
+            return false;
+        }
+        try {
+            pollDeviceLocked(device);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private int pollDeviceLocked(DeviceEntity device) throws IOException, InterruptedException {
+        IsapiClient.DeviceStatusCheckResult status = isapiClient.checkDeviceStatus(device);
+        if (!status.online()) {
+            deviceCursorService.markOffline(device.getId());
+            throw new IOException("Device status check failed with HTTP " + status.statusCode());
+        }
+        // Connectivity and history progress are separate: a slow backlog must not keep the device offline.
+        deviceCursorService.markOnline(device.getId());
+
         List<ParsedAcsEvent> events = fetchMissedEvents(device);
         log.info("HistoryPoller: device={} history returned {} event(s)", device.getId(), events.size());
 
@@ -105,6 +160,10 @@ public class AcsEventHistoryPoller {
 
         updateCursorAfterPoll(device.getId(), maxSerialIngested, maxEventTimeIngested, OffsetDateTime.now());
         return ingestedCount;
+    }
+
+    private ReentrantLock lockFor(Long deviceId) {
+        return devicePollLocks.computeIfAbsent(deviceId, ignored -> new ReentrantLock());
     }
 
     private List<ParsedAcsEvent> fetchMissedEvents(DeviceEntity device)

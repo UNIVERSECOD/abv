@@ -1,0 +1,4 @@
+interface:
+  display_name: "Attendra Device Sync Hardening"
+  short_description: "Reuse safe device status, history, and face fixes"
+  default_prompt: "Use $attendra-device-sync-hardening to port the verified device online, history sync, and face import fixes to another Attendra variant."

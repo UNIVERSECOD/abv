@@ -1,11 +1,17 @@
 import client from './client.ts'
 import { ApiResponse, Employee, EmployeeDeviceSyncResult, EmployeeSearchResult, EmployeeTerminationResult, PaginatedResponse } from '../types'
 
+export interface EmployeeListFilters {
+  q?: string
+  departmentId?: number
+  status?: Employee['employmentStatus']
+  shiftType?: string
+  branchId?: number
+}
+
 export const employeeApi = {
-  getAll: (page = 0, size = 20, branchId?: number) =>
-    client.get<PaginatedResponse<Employee>>(
-      `/employees?page=${page}&size=${size}${branchId ? `&branchId=${branchId}` : ''}`
-    ),
+  getAll: (page = 0, size = 20, filters: EmployeeListFilters = {}) =>
+    client.get<PaginatedResponse<Employee>>('/employees', { params: { page, size, ...filters } }),
   getById: (id: number) => client.get<{ data: Employee }>(`/employees/${id}`),
   create: (data: Partial<Employee>) => client.post<{ data: Employee }>('/employees', data),
   update: (id: number, data: Partial<Employee>) => client.put<{ data: Employee }>(`/employees/${id}`, data),

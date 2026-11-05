@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { Employee, EmployeeTerminationResult, PaginatedResponse } from '../types'
-import { employeeApi } from '../api/employeeApi.ts'
+import { employeeApi, EmployeeListFilters } from '../api/employeeApi.ts'
 
 interface EmployeeState {
   employees: Employee[]
@@ -9,7 +9,8 @@ interface EmployeeState {
   currentPage: number
   loading: boolean
   error: string | null
-  fetchEmployees: (page?: number, size?: number) => Promise<boolean>
+  filters: EmployeeListFilters
+  fetchEmployees: (page?: number, size?: number, filters?: EmployeeListFilters) => Promise<boolean>
   createEmployee: (data: Partial<Employee>) => Promise<void>
   updateEmployee: (id: number, data: Partial<Employee>) => Promise<void>
   terminateEmployee: (id: number, terminationDate: string) => Promise<EmployeeTerminationResult>
@@ -22,16 +23,18 @@ export const useEmployeeStore = create<EmployeeState>((set, get) => ({
   currentPage: 0,
   loading: false,
   error: null,
-  fetchEmployees: async (page = 0, size = 20) => {
+  filters: {},
+  fetchEmployees: async (page = 0, size = 20, filters = get().filters) => {
     set({ loading: true, error: null })
     try {
-      const res = await employeeApi.getAll(page, size)
+      const res = await employeeApi.getAll(page, size, filters)
       const data: PaginatedResponse<Employee> = res.data
       set({
         employees: data.content,
         totalElements: data.totalElements,
         totalPages: data.totalPages,
         currentPage: data.currentPage,
+        filters,
         loading: false,
       })
       return true

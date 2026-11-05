@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout.tsx'
+import PaginationBar from '../components/PaginationBar.tsx'
 import { attendanceApi } from '../api/attendanceApi.ts'
 import { positionApi } from '../api/positionApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
@@ -317,9 +318,11 @@ export default function ReportsPage() {
               {columns.map(c => <td key={c.label} className="px-4 py-3 whitespace-nowrap text-gray-600">{c.cell(row)}</td>)}</tr>)}</tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500"><span>{totalElements} qeyd</span>
-        <div className="flex gap-2 items-center"><button className={actionClass} disabled={loading || page <= 0} onClick={() => setPage(page - 1)}>Əvvəlki</button>
-          <span>{page + 1} / {Math.max(totalPages, 1)}</span><button className={actionClass} disabled={loading || page + 1 >= totalPages} onClick={() => setPage(page + 1)}>Növbəti</button></div></div>
+      {totalPages > 1 && <div className="overflow-hidden rounded-xl border border-gray-100 bg-white">
+        <PaginationBar page={page} pageSize={20} totalItems={totalElements} loading={loading}
+          pageSizeOptions={[20]} idPrefix="attendance-report" onPageChange={setPage}
+          onPageSizeChange={() => undefined} />
+      </div>}
     </div>
   </Layout>
 }

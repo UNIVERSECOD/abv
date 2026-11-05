@@ -499,7 +499,9 @@ class EmployeeServiceTest {
     @Test
     void getAll_returnsPaginatedResponse() {
         Page<Employee> page = new PageImpl<>(List.of(testEmployee));
-        when(employeeRepository.findByEmploymentStatusNot(eq(EmploymentStatus.TERMINATED), any(Pageable.class)))
+        when(employeeRepository.findActiveByFilters(
+                isNull(), eq(EmploymentStatus.TERMINATED), isNull(), isNull(), isNull(), isNull(), isNull(),
+                any(Pageable.class)))
                 .thenReturn(page);
         when(departmentRepository.findAllById(anyCollection())).thenReturn(List.of(testDepartment));
         when(positionRepository.findAllById(anyCollection())).thenReturn(Collections.emptyList());

@@ -27,8 +27,13 @@ public class EmployeeController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String sortBy,
-            @RequestParam(required = false) Long branchId) {
-        return ResponseEntity.ok(employeeService.getAll(page, size, sortBy, branchId));
+            @RequestParam(required = false) Long branchId,
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long departmentId,
+            @RequestParam(required = false) EmploymentStatus status,
+            @RequestParam(required = false) String shiftType) {
+        return ResponseEntity.ok(employeeService.getAll(
+                page, size, sortBy, branchId, q, departmentId, status, shiftType));
     }
 
     @GetMapping("/{id}")

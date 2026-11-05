@@ -69,20 +69,34 @@ public class EmployeeService {
     }
 
     public PaginatedResponse<EmployeeResponseDTO> getAll(int page, int size, String sortBy, Long requestedBranchId) {
+        return getAll(page, size, sortBy, requestedBranchId, null, null, null, null);
+    }
+
+    public PaginatedResponse<EmployeeResponseDTO> getAll(
+            int page,
+            int size,
+            String sortBy,
+            Long requestedBranchId,
+            String query,
+            Long departmentId,
+            EmploymentStatus status,
+            String shiftType) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy != null ? sortBy : "id"));
         Long tenantId = TenantContext.getTenantId();
         Long effectiveBranchId = userScopeService.resolveBranchScope(requestedBranchId);
-        Page<Employee> employeePage;
-        if (tenantId != null && effectiveBranchId != null) {
-            employeePage = employeeRepository.findByTenantIdAndAreaIdAndEmploymentStatusNot(
-                    tenantId, effectiveBranchId, EmploymentStatus.TERMINATED, pageable);
-        } else if (tenantId != null) {
-            employeePage = employeeRepository.findByTenantIdAndEmploymentStatusNot(
-                    tenantId, EmploymentStatus.TERMINATED, pageable);
-        } else {
-            employeePage = employeeRepository.findByEmploymentStatusNot(
-                    EmploymentStatus.TERMINATED, pageable);
-        }
+        String normalizedQuery = query == null || query.isBlank() ? null : query.trim();
+        String normalizedShift = shiftType == null || shiftType.isBlank()
+                ? null
+                : shiftType.trim().toUpperCase(java.util.Locale.ROOT);
+        Page<Employee> employeePage = employeeRepository.findActiveByFilters(
+                tenantId,
+                EmploymentStatus.TERMINATED,
+                normalizedQuery,
+                departmentId,
+                status,
+                normalizedShift,
+                effectiveBranchId,
+                pageable);
         return buildPaginatedResponse(employeePage);
     }
 

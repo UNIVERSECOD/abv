@@ -32,6 +32,38 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     @Query("""
             SELECT e FROM Employee e
+            WHERE (:tenantId IS NULL OR e.tenantId = :tenantId)
+              AND e.employmentStatus <> :excludedStatus
+              AND (:status IS NULL OR e.employmentStatus = :status)
+              AND (:departmentId IS NULL OR e.departmentId = :departmentId)
+              AND (:branchId IS NULL OR e.branchId = :branchId OR EXISTS (
+                    SELECT ea.id FROM EmployeeArea ea
+                    WHERE ea.employeeId = e.id AND ea.branchId = :branchId
+              ))
+              AND (:shiftType IS NULL
+                   OR (:shiftType = 'STANDARD' AND UPPER(COALESCE(e.shiftType, '')) IN ('MORNING','NIGHT','STANDARD'))
+                   OR (:shiftType = 'FLEXIBLE' AND UPPER(COALESCE(e.shiftType, '')) IN ('FLEXIBLE','FIRST_ENTRY','SERBEST','FREE_SHIFT','FREE'))
+                   OR UPPER(COALESCE(e.shiftType, '')) = UPPER(:shiftType))
+              AND (:query IS NULL
+                   OR LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%'))
+                   OR LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%'))
+                   OR LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%'))
+                   OR LOWER(e.employeeId) LIKE LOWER(CONCAT('%', :query, '%'))
+                   OR LOWER(e.finNumber) LIKE LOWER(CONCAT('%', :query, '%'))
+                   OR LOWER(e.email) LIKE LOWER(CONCAT('%', :query, '%')))
+            """)
+    Page<Employee> findActiveByFilters(
+            @Param("tenantId") Long tenantId,
+            @Param("excludedStatus") EmploymentStatus excludedStatus,
+            @Param("query") String query,
+            @Param("departmentId") Long departmentId,
+            @Param("status") EmploymentStatus status,
+            @Param("shiftType") String shiftType,
+            @Param("branchId") Long branchId,
+            Pageable pageable);
+
+    @Query("""
+            SELECT e FROM Employee e
             WHERE e.tenantId = :tenantId
               AND EXISTS (
                   SELECT ea.id FROM EmployeeArea ea

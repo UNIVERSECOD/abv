@@ -4,6 +4,7 @@ import EmployeeDetailModal from '../components/EmployeeDetailModal.tsx'
 import EmployeeAvatar from '../components/EmployeeAvatar.tsx'
 import EmployeePhotoCapture from '../components/EmployeePhotoCapture.tsx'
 import DataTransferControls from '../components/DataTransferControls.tsx'
+import PaginationBar from '../components/PaginationBar.tsx'
 import { useEmployeeStore } from '../store/employeeStore.ts'
 import { useBranchStore } from '../store/branchStore.ts'
 import { Department, Employee, Position, Timetable } from '../types'
@@ -17,6 +18,7 @@ import { getApiErrorMessage } from '../utils/apiError.ts'
 import { todayInAppTimeZone } from '../utils/dateTime.ts'
 import { validateFaceImageSize } from '../utils/faceImage.ts'
 import { toast } from '../store/toastStore.ts'
+import { useDebounce } from '../hooks/useSearch.ts'
 
 const UI_SHIFT_TYPES = ['STANDARD', 'FLEXIBLE'] as const
 const SHIFT_TYPE_LABELS: Record<string, string> = {
@@ -167,6 +169,7 @@ export default function EmployeesPage() {
   const { employees, loading, error, fetchEmployees, terminateEmployee, totalPages, currentPage, totalElements } = useEmployeeStore()
   const { branches, fetchBranches } = useBranchStore()
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [departments, setDepartments] = useState<Department[]>([])
   const [positions, setPositions] = useState<Position[]>([])
   const [timetables, setTimetables] = useState<Timetable[]>([])
@@ -213,13 +216,23 @@ export default function EmployeesPage() {
   const wizardImageLoadTokenRef = useRef(0)
 
   useEffect(() => {
-    fetchEmployees(0, 20)
     departmentApi.getAll().then((res) => setDepartments(res.data?.data ?? []))
     positionApi.getAll().then((res) => setPositions(res.data?.data ?? []))
     fetchBranches()
     timetableApi.getAll().then((res) => setTimetables(res.data?.data ?? []))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (employeeView !== 'active') return
+    void fetchEmployees(0, 20, {
+      q: debouncedSearch.trim() || undefined,
+      departmentId: filterDept ? Number(filterDept) : undefined,
+      status: filterStatus ? filterStatus as Employee['employmentStatus'] : undefined,
+      shiftType: filterShift || undefined,
+      branchId: filterBranch ? Number(filterBranch) : undefined,
+    })
+  }, [debouncedSearch, employeeView, fetchEmployees, filterBranch, filterDept, filterShift, filterStatus])
 
   useEffect(() => () => {
     if (wizardImageObjectUrlRef.current) {
@@ -858,7 +871,7 @@ export default function EmployeesPage() {
   const viewLoading = employeeView === 'terminated' ? terminatedLoading : loading
   const viewError = employeeView === 'terminated' ? terminatedError : error
 
-  const filtered = visibleEmployees.filter((e: Employee) => {
+  const filtered = employeeView === 'active' ? employees : visibleEmployees.filter((e: Employee) => {
     const matchSearch = !search || `${e.firstName} ${e.lastName}`.toLowerCase().includes(search.toLowerCase()) || e.employeeId.toLowerCase().includes(search.toLowerCase())
     const matchDept = !filterDept || String(e.departmentId) === filterDept
     const matchStatus = !filterStatus || e.employmentStatus === filterStatus
@@ -1167,14 +1180,17 @@ export default function EmployeesPage() {
 
         {/* Pagination */}
         {employeeView === 'active' && totalPages > 1 && (
-          <div className="mt-4 flex items-center justify-between">
-            <button onClick={() => fetchEmployees(currentPage - 1)} disabled={currentPage === 0} className="px-4 py-2 text-sm border border-gray-300 bg-white rounded-lg disabled:opacity-50 hover:bg-gray-50">
-              Əvvəlki
-            </button>
-            <span className="text-sm text-gray-500">Səhifə {currentPage + 1} / {totalPages}</span>
-            <button onClick={() => fetchEmployees(currentPage + 1)} disabled={currentPage >= totalPages - 1} className="px-4 py-2 text-sm border border-gray-300 bg-white rounded-lg disabled:opacity-50 hover:bg-gray-50">
-              Növbəti
-            </button>
+          <div className="mt-4 overflow-hidden rounded-xl bg-white shadow-sm">
+            <PaginationBar
+              page={currentPage}
+              pageSize={20}
+              totalItems={totalElements}
+              loading={loading}
+              pageSizeOptions={[20]}
+              idPrefix="employees"
+              onPageChange={(page) => { void fetchEmployees(page, 20) }}
+              onPageSizeChange={() => undefined}
+            />
           </div>
         )}
       </div>

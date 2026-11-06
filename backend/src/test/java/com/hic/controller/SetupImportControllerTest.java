@@ -67,8 +67,9 @@ class SetupImportControllerTest {
         verify(hikDeviceUserImportService).importUsersFromBranch(any());
         org.mockito.ArgumentCaptor<LocalDateTime> start = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
         org.mockito.ArgumentCaptor<LocalDateTime> end = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(doorAttendanceSyncService).syncAllDevices(start.capture(), end.capture(), eq(500));
-        org.assertj.core.api.Assertions.assertThat(start.getValue()).isEqualTo(end.getValue().minusDays(3));
+        verify(doorAttendanceSyncService).syncAllDevicesForImport(start.capture(), end.capture(), eq(500));
+        org.assertj.core.api.Assertions.assertThat(start.getValue())
+                .isEqualTo(com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay());
     }
 
     @Test
@@ -78,7 +79,7 @@ class SetupImportControllerTest {
         result.setCreated(3);
         result.setMessage("Import tamamlandı.");
         when(hikDeviceUserImportService.importUsersFromBranch(any())).thenReturn(result);
-        when(doorAttendanceSyncService.syncAllDevices(any(), any(), eq(500)))
+        when(doorAttendanceSyncService.syncAllDevicesForImport(any(), any(), eq(500)))
                 .thenThrow(new IllegalStateException("ISAPI unavailable"));
 
         mockMvc.perform(post("/api/setup/import-employees")

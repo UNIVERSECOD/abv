@@ -403,6 +403,34 @@ class DoorAttendanceSyncServiceTest {
         verify(attendanceLogRepository, never()).save(any());
     }
 
+    @Test
+    void importBackfillIncludesYesterdayPunchesBeforeCurrentCombinedRoleAssignment() {
+        DeviceConfig device = device(10L, "101", "BOTH");
+        device.setBranchId(7L);
+        LocalDate day = LocalDate.of(2026, 10, 9);
+        device.setAttendanceRoleSince(day.atTime(8, 0));
+        Employee employee = employee(5L, "1001");
+        when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(device));
+        when(employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(10L, "1001")).thenReturn(List.of(employee));
+        when(employeeRepository.findByTenantIdAndId(1L, 5L)).thenReturn(Optional.of(employee));
+        var earlier = punch("1001", 101L, day.atTime(7, 59));
+        var later = punch("1001", 101L, day.atTime(17, 0));
+        when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(earlier, later));
+        when(combinedDeviceAttendanceService.accept(1L, employee, 7L, earlier))
+                .thenReturn(new CombinedDeviceAttendanceService.Result(true, false, false));
+        when(combinedDeviceAttendanceService.accept(1L, employee, 7L, later))
+                .thenReturn(new CombinedDeviceAttendanceService.Result(true, true, false));
+
+        var result = doorAttendanceSyncService.syncAllDevicesForImport(
+                day.atStartOfDay(), day.plusDays(1).atStartOfDay(), 100);
+
+        assertThat(result.getCreatedLogs()).isEqualTo(2);
+        assertThat(result.getMatchedSessions()).isEqualTo(1);
+        verify(combinedDeviceAttendanceService).accept(1L, employee, 7L, earlier);
+        verify(combinedDeviceAttendanceService).accept(1L, employee, 7L, later);
+    }
+
     private void stubDevicesAndEmployee(DeviceConfig entryDevice, DeviceConfig exitDevice, Employee employee) {
         when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(entryDevice, exitDevice));
         when(employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(anyLong(), eq("1001")))

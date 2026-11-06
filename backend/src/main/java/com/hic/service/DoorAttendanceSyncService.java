@@ -69,13 +69,31 @@ public class DoorAttendanceSyncService {
             LocalDateTime end,
             Integer limit
     ) {
+        return syncAllDevices(start, end, limit, false);
+    }
+
+    /** Explicit user-triggered backfill using the devices' current role/area configuration. */
+    public DoorAttendanceSyncResultDTO syncAllDevicesForImport(
+            LocalDateTime start,
+            LocalDateTime end,
+            Integer limit
+    ) {
+        return syncAllDevices(start, end, limit, true);
+    }
+
+    private DoorAttendanceSyncResultDTO syncAllDevices(
+            LocalDateTime start,
+            LocalDateTime end,
+            Integer limit,
+            boolean includeEventsBeforeRoleAssignment
+    ) {
         Long tenantId = TenantContext.getTenantId();
         Object lock = tenantId != null
                 ? tenantSyncLocks.computeIfAbsent(tenantId, ignored -> new Object())
                 : nullTenantSyncLock;
         synchronized (lock) {
             DoorAttendanceSyncService runner = self != null ? self : this;
-            return runner.syncAllDevicesInTransaction(start, end, limit);
+            return runner.syncAllDevicesInTransaction(start, end, limit, includeEventsBeforeRoleAssignment);
         }
     }
 
@@ -83,7 +101,8 @@ public class DoorAttendanceSyncService {
     public DoorAttendanceSyncResultDTO syncAllDevicesInTransaction(
             LocalDateTime start,
             LocalDateTime end,
-            Integer limit
+            Integer limit,
+            boolean includeEventsBeforeRoleAssignment
     ) {
         int effectiveLimit = limit == null || limit <= 0 ? DEFAULT_LIMIT : limit;
         Long tenantId = TenantContext.getTenantId();
@@ -115,7 +134,9 @@ public class DoorAttendanceSyncService {
             allPunches.addAll(fetchPunchesInRange(isapiDeviceId, start, end, effectiveLimit)
                     .stream()
                     .filter(p -> p.getPunchTime() != null && p.getEmployeeNo() != null)
-                    .filter(p -> device.getAttendanceRoleSince() == null
+                    .filter(p -> (includeEventsBeforeRoleAssignment
+                            && "BOTH".equalsIgnoreCase(device.getDoorRole()))
+                            || device.getAttendanceRoleSince() == null
                             || !toLocalDateTime(p.getPunchTime()).isBefore(device.getAttendanceRoleSince()))
                     .toList());
         }

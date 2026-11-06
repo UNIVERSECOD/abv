@@ -202,15 +202,16 @@ class DeviceControllerTest {
 
         ArgumentCaptor<LocalDateTime> start = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> end = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(doorAttendanceSyncService).syncAllDevices(start.capture(), end.capture(), eq(500));
-        Assertions.assertThat(start.getValue()).isEqualTo(end.getValue().minusDays(3));
+        verify(doorAttendanceSyncService).syncAllDevicesForImport(start.capture(), end.capture(), eq(500));
+        Assertions.assertThat(start.getValue())
+                .isEqualTo(com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay());
     }
 
     @Test
     void importUsers_keepsImportedEmployeesWhenAttendanceSyncFails() throws Exception {
         when(hikDeviceUserImportService.importUsersFromDevice(1L))
                 .thenReturn(new HikUserInfoSearchDTO.ImportResultDTO(4, 2, 2, 0, "Import tamamlandı."));
-        when(doorAttendanceSyncService.syncAllDevices(any(), any(), eq(500)))
+        when(doorAttendanceSyncService.syncAllDevicesForImport(any(), any(), eq(500)))
                 .thenThrow(new IllegalStateException("ISAPI unavailable"));
 
         mockMvc.perform(post("/api/devices/1/import-users"))

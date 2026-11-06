@@ -160,7 +160,8 @@ public class DeviceController {
         HikUserInfoSearchDTO.ImportResultDTO result = hikDeviceUserImportService.importUsersFromDevice(id);
         try {
             LocalDateTime end = com.hic.util.AppTimeZone.now();
-            doorAttendanceSyncService.syncAllDevices(end.minusDays(3), end, 500);
+            LocalDateTime start = com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay();
+            doorAttendanceSyncService.syncAllDevicesForImport(start, end, 500);
         } catch (Exception ex) {
             org.slf4j.LoggerFactory.getLogger(DeviceController.class)
                     .warn("Attendance history sync failed after importing users from device {}", id, ex);

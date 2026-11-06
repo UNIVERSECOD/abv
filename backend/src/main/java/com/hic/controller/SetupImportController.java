@@ -2,6 +2,7 @@ package com.hic.controller;
 
 import com.hic.dto.ApiResponse;
 import com.hic.dto.DeviceEmployeeImportDTO;
+import com.hic.service.DoorAttendanceSyncService;
 import com.hic.service.HikDeviceUserImportService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +11,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDateTime;
 
 /**
  * Setup-team endpoints for onboarding an existing Hikvision site into this ERP.
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SetupImportController {
 
     private final HikDeviceUserImportService hikDeviceUserImportService;
+    private final DoorAttendanceSyncService doorAttendanceSyncService;
 
     /**
      * Import employees from all (or selected) devices of a branch.
@@ -33,7 +37,17 @@ public class SetupImportController {
     @PostMapping("/import-employees")
     public ResponseEntity<ApiResponse<DeviceEmployeeImportDTO.ImportResult>> importEmployees(
             @RequestBody DeviceEmployeeImportDTO.ImportRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(
-                hikDeviceUserImportService.importUsersFromBranch(request)));
+        DeviceEmployeeImportDTO.ImportResult result = hikDeviceUserImportService.importUsersFromBranch(request);
+        try {
+            LocalDateTime end = com.hic.util.AppTimeZone.now();
+            doorAttendanceSyncService.syncAllDevices(end.minusDays(3), end, 500);
+        } catch (Exception ex) {
+            org.slf4j.LoggerFactory.getLogger(SetupImportController.class)
+                    .warn("Attendance history sync failed after branch device import {}", request.getBranchId(), ex);
+            String importMessage = result.getMessage() == null ? "" : result.getMessage().trim();
+            result.setMessage((importMessage.isEmpty() ? "" : importMessage + " ")
+                    + "İşçilər import edildi, lakin keçid tarixçəsi sinxronlaşdırılmadı; yenidən sinxron edin.");
+        }
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 }

@@ -2,6 +2,7 @@ package com.hic.controller;
 
 import com.hic.dto.ApiResponse;
 import com.hic.dto.DeviceSyncDTO;
+import com.hic.dto.HikUserInfoSearchDTO;
 import com.hic.model.DeviceConfig;
 import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.UserRepository;
@@ -188,6 +189,35 @@ class DeviceControllerTest {
                 .andExpect(jsonPath("$.data.recordsSynced").value(3));
 
         verify(doorAttendanceSyncService).syncAllDevices(any(), any(), eq(500));
+    }
+
+    @Test
+    void importUsers_syncsRecentAttendanceIncludingYesterday() throws Exception {
+        when(hikDeviceUserImportService.importUsersFromDevice(1L))
+                .thenReturn(new HikUserInfoSearchDTO.ImportResultDTO(4, 2, 2, 0, "Import tamamlandı."));
+
+        mockMvc.perform(post("/api/devices/1/import-users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created").value(2));
+
+        ArgumentCaptor<LocalDateTime> start = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> end = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(doorAttendanceSyncService).syncAllDevices(start.capture(), end.capture(), eq(500));
+        Assertions.assertThat(start.getValue()).isEqualTo(end.getValue().minusDays(3));
+    }
+
+    @Test
+    void importUsers_keepsImportedEmployeesWhenAttendanceSyncFails() throws Exception {
+        when(hikDeviceUserImportService.importUsersFromDevice(1L))
+                .thenReturn(new HikUserInfoSearchDTO.ImportResultDTO(4, 2, 2, 0, "Import tamamlandı."));
+        when(doorAttendanceSyncService.syncAllDevices(any(), any(), eq(500)))
+                .thenThrow(new IllegalStateException("ISAPI unavailable"));
+
+        mockMvc.perform(post("/api/devices/1/import-users"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created").value(2))
+                .andExpect(jsonPath("$.data.message").value(org.hamcrest.Matchers.containsString(
+                        "keçid tarixçəsi sinxronlaşdırılmadı")));
     }
 
     @Test

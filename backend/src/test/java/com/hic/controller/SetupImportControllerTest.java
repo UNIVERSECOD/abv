@@ -2,6 +2,7 @@ package com.hic.controller;
 
 import com.hic.dto.DeviceEmployeeImportDTO;
 import com.hic.repository.UserRepository;
+import com.hic.service.DoorAttendanceSyncService;
 import com.hic.service.HikDeviceUserImportService;
 import com.hic.util.JwtUtil;
 import org.junit.jupiter.api.Test;
@@ -13,7 +14,10 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
+
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,6 +35,9 @@ class SetupImportControllerTest {
 
     @MockBean
     private HikDeviceUserImportService hikDeviceUserImportService;
+
+    @MockBean
+    private DoorAttendanceSyncService doorAttendanceSyncService;
 
     @MockBean
     private JwtUtil jwtUtil;
@@ -58,5 +65,28 @@ class SetupImportControllerTest {
                 .andExpect(jsonPath("$.data.branchId").value(10));
 
         verify(hikDeviceUserImportService).importUsersFromBranch(any());
+        org.mockito.ArgumentCaptor<LocalDateTime> start = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        org.mockito.ArgumentCaptor<LocalDateTime> end = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(doorAttendanceSyncService).syncAllDevices(start.capture(), end.capture(), eq(500));
+        org.assertj.core.api.Assertions.assertThat(start.getValue()).isEqualTo(end.getValue().minusDays(3));
+    }
+
+    @Test
+    void importEmployees_keepsResultWhenAttendanceHistorySyncFails() throws Exception {
+        DeviceEmployeeImportDTO.ImportResult result = new DeviceEmployeeImportDTO.ImportResult();
+        result.setBranchId(10L);
+        result.setCreated(3);
+        result.setMessage("Import tamamlandı.");
+        when(hikDeviceUserImportService.importUsersFromBranch(any())).thenReturn(result);
+        when(doorAttendanceSyncService.syncAllDevices(any(), any(), eq(500)))
+                .thenThrow(new IllegalStateException("ISAPI unavailable"));
+
+        mockMvc.perform(post("/api/setup/import-employees")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"branchId\":10}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.created").value(3))
+                .andExpect(jsonPath("$.data.message").value(org.hamcrest.Matchers.containsString(
+                        "keçid tarixçəsi sinxronlaşdırılmadı")));
     }
 }

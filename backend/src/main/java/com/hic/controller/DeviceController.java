@@ -158,6 +158,16 @@ public class DeviceController {
     public ResponseEntity<ApiResponse<HikUserInfoSearchDTO.ImportResultDTO>> importUsers(
             @PathVariable Long id) {
         HikUserInfoSearchDTO.ImportResultDTO result = hikDeviceUserImportService.importUsersFromDevice(id);
+        try {
+            LocalDateTime end = com.hic.util.AppTimeZone.now();
+            doorAttendanceSyncService.syncAllDevices(end.minusDays(3), end, 500);
+        } catch (Exception ex) {
+            org.slf4j.LoggerFactory.getLogger(DeviceController.class)
+                    .warn("Attendance history sync failed after importing users from device {}", id, ex);
+            String importMessage = result.getMessage() == null ? "" : result.getMessage().trim();
+            result.setMessage((importMessage.isEmpty() ? "" : importMessage + " ")
+                    + "İşçilər import edildi, lakin keçid tarixçəsi sinxronlaşdırılmadı; yenidən sinxron edin.");
+        }
         return ResponseEntity.ok(ApiResponse.success(result));
     }
 

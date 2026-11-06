@@ -48,7 +48,7 @@ public class SetupImportController {
     public ResponseEntity<ApiResponse<DeviceEmployeeImportDTO.ImportResult>> importEmployees(
             @RequestBody DeviceEmployeeImportDTO.ImportRequest request) {
         DeviceEmployeeImportDTO.ImportResult result = hikDeviceUserImportService.importUsersFromBranch(request);
-        LocalDateTime start = com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay();
+        LocalDateTime start = java.time.LocalDate.of(2026, 10, 1).atStartOfDay();
         List<String> historyWarnings = pullSelectedDeviceHistories(request, start);
         try {
             LocalDateTime end = com.hic.util.AppTimeZone.now();

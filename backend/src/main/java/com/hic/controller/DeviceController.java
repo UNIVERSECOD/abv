@@ -160,7 +160,7 @@ public class DeviceController {
         DeviceConfig backendDevice = requireOwnedDevice(id);
         HikUserInfoSearchDTO.ImportResultDTO result = hikDeviceUserImportService.importUsersFromDevice(id);
         String historyWarning = null;
-        LocalDateTime start = com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay();
+        LocalDateTime start = java.time.LocalDate.of(2026, 10, 1).atStartOfDay();
         try {
             DeviceSyncDTO.SyncResultDTO history = deviceSyncService.syncDeviceNow(
                     toIsapiId(backendDevice.getDeviceId()), start);

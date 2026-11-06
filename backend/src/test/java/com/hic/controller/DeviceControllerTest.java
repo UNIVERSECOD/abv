@@ -206,7 +206,7 @@ class DeviceControllerTest {
         verify(doorAttendanceSyncService).syncAllDevicesForImport(start.capture(), end.capture(), eq(500));
         verify(deviceSyncService).syncDeviceNow(eq(10L), any(LocalDateTime.class));
         Assertions.assertThat(start.getValue())
-                .isEqualTo(com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay());
+                .isEqualTo(java.time.LocalDate.of(2026, 10, 1).atStartOfDay());
     }
 
     @Test

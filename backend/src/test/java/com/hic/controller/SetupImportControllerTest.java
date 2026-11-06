@@ -86,7 +86,7 @@ class SetupImportControllerTest {
         verify(deviceSyncService).syncDeviceNow(eq(102L), any(LocalDateTime.class));
         verify(doorAttendanceSyncService).syncAllDevicesForImport(start.capture(), end.capture(), eq(500));
         org.assertj.core.api.Assertions.assertThat(start.getValue())
-                .isEqualTo(com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay());
+                .isEqualTo(java.time.LocalDate.of(2026, 10, 1).atStartOfDay());
     }
 
     @Test

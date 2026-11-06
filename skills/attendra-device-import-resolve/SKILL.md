@@ -1,6 +1,6 @@
 ---
 name: attendra-device-import-resolve
-description: Preserve and develop the Attendra plan for resolving the same person with different employee numbers across devices during import. Use for this import identity workflow, its implementation planning, or its handoff to another chat.
+description: Preserve and develop Attendra device-import identity rules and the implemented multi-device attendance backfill workflow. Use for device employee import, duplicate or mismatched terminal IDs, two-device first-entry/last-exit attendance, historical log backfill, face-import counters, import timeouts, or handoff to another chat.
 ---
 
 # Attendra cihaz idxalında şəxslərin uyğunlaşdırılması
@@ -10,6 +10,42 @@ description: Preserve and develop the Attendra plan for resolving the same perso
 2026-11-01 tarixində istifadəçi bu fikirlərin saxlanmasını istədi. **Funksiya hələ tətbiq edilməyib.** İstifadəçi açıq şəkildə «hələ əlavə etmə, planlaşdıraq» deyib. Bu fayl plan və kontekst ötürülməsidir; özü implementasiya və ya cihaz əməliyyatı üçün icazə deyil. Sonrakı açıq istifadəçi tapşırığı bu vəziyyəti dəyişə bilər.
 
 İstifadəçinin iki cihazı var. Böyük ehtimalla hər ikisində eyni adamlar var, amma terminal nömrələri fərqli ola bilər; istifadəçi nömrələrin eyni olub-olmadığını hələ bilmir. İstək: proqram mümkün uyğunluğu göstərsin və «bu adamı birləşdirək, ya yox?» soruşsun.
+
+## Tətbiq edilmiş proqram dəyişiklikləri (2026-11-06)
+
+Bu bölmə artıq `UNIVERSECOD/abv` repository-sinin `main` budağına göndərilmiş davranışı təsvir edir. Fərqli `employeeNo` dəyərlərini istifadəçi təsdiqi ilə birləşdirmək planı hələ tətbiq edilməyib; aşağıdakı dəyişikliklər eyni terminal şəxs ID-si olan iki cihaz ssenarisini həll edir.
+
+### İki cihazdan davamiyyət
+
+- Bir cihaz həm giriş, həm çıxış kimi istifadə oluna bilər (`BOTH`). Eyni ərazi, əməkdaş və gün üzrə bütün uyğun cihaz loglarını birlikdə hesabla.
+- Günün ən erkən punch-ını giriş, ən gec punch-ını çıxış kimi saxla. Yalnız bir punch varsa onu giriş kimi göstər; daha erkən punch sonradan gələndə əvvəlki gec punch çıxışa keçməlidir.
+- Import zamanı yalnız ISAPI-də artıq saxlanmış punch-ları oxumaq kifayət deyil. Seçilmiş hər cihazın fiziki tarixçəsini əvvəlcə sinxron və tamamlanana qədər çək, sonra backend davamiyyət hesablamasını işə sal.
+- Tarixçə backfill başlanğıcı hazırda sabit olaraq **2026-10-01 00:00 Asia/Baku**-dur. Backend bunu UTC instant-a çevirib ISAPI `POST /api/devices/{bridgeId}/sync-now?start=...` endpoint-inə göndərir.
+- ISAPI açıq başlanğıc veriləndə mövcud yeni cursor-un köhnə hadisələri gizlətməsinə imkan verməməlidir: sorğunu verilən tarixdən və serial `0`-dan başlat, amma saxlanmış cursor-u geriyə aparma.
+- Raw access event-ləri və punch-ları idempotent saxla; təkrar import mövcud logları təkrar yaratmamalıdır.
+- Import backfill-i üçün `attendance_role_since` sərhədini yalnız `BOTH` cihazlarda keçmək olar. Digər davamiyyət axınlarının rol tarixçəsi davranışını dəyişmə.
+
+Əsas tətbiq commit-ləri: `9d741de`, `25f83c4`, `1ad0077`, `1960443`.
+
+### Əməkdaş və üz statistikası
+
+- İki cihazda 138 eyni şəxs varsa `fetched=276`, `unique=138` normaldır; bu, 276 əməkdaş yaradılması demək deyil.
+- Mövcud lokal üz şəkli sayını cihaz/şəxs cəhdi üzrə deyil, unikal lokal əməkdaş üzrə hesabla. Eyni üz iki cihazda olduğuna görə `facesSkippedExisting=266` kimi ikiqat say göstərmə.
+- İşdən çıxmış əməkdaşları yenidən aktivləşdirmə və ya cihazla yenidən bağlama. `skippedTerminated` sayını ayrıca nəticədə və Azərbaycan dilində UI statistikası kimi göstər.
+- `Employee.id`, `Employee.employeeId` və `Employee.deviceEmployeeNo`-nu, həmçinin `DeviceConfig.id` və `DeviceConfig.deviceId`-ni bir-biri ilə əvəz etmə.
+
+### Uzun import və 504
+
+- 1 oktyabrdan iki cihazın ilkin tarixçə/üz importu adi 60 saniyəlik gateway limitini keçə bilər. Bu, cihaz məlumatının səhv olduğunu göstərmir.
+- Frontend Nginx-də yalnız `location = /api/setup/import-employees` üçün `proxy_read_timeout` və `proxy_send_timeout` 900 saniyədir. Digər API timeout-larını genişləndirmə.
+- Bu dəyişiklik frontend image/container yenidən build və deploy ediləndən sonra qüvvəyə minir. Commit: `a89fb49`.
+
+### Deploy və diaqnostika
+
+- Tam davranış üçün frontend, backend və ISAPI-nin uyğun `main` versiyalarını birlikdə deploy et; tək frontend timeout-u və ya tək backend dəyişməsi kifayət deyil.
+- Importdan sonra əvvəl cihaz tarixçəsinin tamamlandığını, sonra backend combined sync nəticəsini yoxla. `504` görünsə server işi davam etmiş ola bilər; təkrar başlamazdan əvvəl log və nəticəni yoxla.
+- Fiziki cihaz tarixçəsinin oxunması read-only əməliyyatdır. Şəxsi başqa cihaza yazmaq seçimi ayrıca fiziki cihaz yazısıdır və repository təhlükəsizlik qaydalarına tabedir.
+- Testlər real cihazlara qoşulmamalıdır. ISAPI poller, sync-now controller/client, import controller, combined attendance və unikal üz sayını mock/sintetik testlərlə yoxla.
 
 ## Hansı layihədir
 

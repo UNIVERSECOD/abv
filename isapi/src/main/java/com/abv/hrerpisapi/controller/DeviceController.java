@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -163,6 +164,27 @@ public class DeviceController {
         deviceCursorService.markOnline(device.getId());
         historyPoller.pollDeviceInBackground(device);
         return new DeviceSyncResponse(true, "Device is online; history synchronization started", 0);
+    }
+
+    @PostMapping("/{id}/sync-now")
+    public DeviceSyncResponse syncNow(
+            @PathVariable Long id,
+            @RequestParam(required = false) OffsetDateTime start) {
+        DeviceEntity device = requireDevice(id);
+        deviceWorkerService.startDevice(device);
+        try {
+            int recordsSynced = start != null
+                    ? historyPoller.pollDeviceSince(device, start)
+                    : historyPoller.pollDevice(device);
+            return new DeviceSyncResponse(true, "Device history synchronization completed", recordsSynced);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Device history synchronization was interrupted", ex);
+        } catch (IOException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Device history synchronization failed", ex);
+        }
     }
 
     @GetMapping("/{id}/status")

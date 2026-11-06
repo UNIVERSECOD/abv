@@ -157,17 +157,32 @@ public class DeviceController {
     @PostMapping("/{id}/import-users")
     public ResponseEntity<ApiResponse<HikUserInfoSearchDTO.ImportResultDTO>> importUsers(
             @PathVariable Long id) {
+        DeviceConfig backendDevice = requireOwnedDevice(id);
         HikUserInfoSearchDTO.ImportResultDTO result = hikDeviceUserImportService.importUsersFromDevice(id);
+        String historyWarning = null;
+        LocalDateTime start = com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay();
+        try {
+            DeviceSyncDTO.SyncResultDTO history = deviceSyncService.syncDeviceNow(
+                    toIsapiId(backendDevice.getDeviceId()), start);
+            if (history == null || !history.isSuccess()) {
+                historyWarning = "Cihaz tarixçəsi tam çəkilmədi.";
+            }
+        } catch (Exception ex) {
+            historyWarning = "Cihaz tarixçəsi çəkilmədi.";
+            org.slf4j.LoggerFactory.getLogger(DeviceController.class)
+                    .warn("Device history pull failed after importing users from device {}", id, ex);
+        }
         try {
             LocalDateTime end = com.hic.util.AppTimeZone.now();
-            LocalDateTime start = com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay();
             doorAttendanceSyncService.syncAllDevicesForImport(start, end, 500);
         } catch (Exception ex) {
             org.slf4j.LoggerFactory.getLogger(DeviceController.class)
                     .warn("Attendance history sync failed after importing users from device {}", id, ex);
+            historyWarning = "Keçid tarixçəsi hesablanmadı; yenidən sinxron edin.";
+        }
+        if (historyWarning != null) {
             String importMessage = result.getMessage() == null ? "" : result.getMessage().trim();
-            result.setMessage((importMessage.isEmpty() ? "" : importMessage + " ")
-                    + "İşçilər import edildi, lakin keçid tarixçəsi sinxronlaşdırılmadı; yenidən sinxron edin.");
+            result.setMessage((importMessage.isEmpty() ? "" : importMessage + " ") + historyWarning);
         }
         return ResponseEntity.ok(ApiResponse.success(result));
     }

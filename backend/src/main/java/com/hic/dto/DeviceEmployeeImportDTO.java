@@ -47,6 +47,7 @@ public class DeviceEmployeeImportDTO {
         private int uniquePersons;
         private int created;
         private int skippedExisting;
+        private int skippedTerminated;
         private int skippedConflict;
         private int crossBranchLinked;
         private int accessLinked;

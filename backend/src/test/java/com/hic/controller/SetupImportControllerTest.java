@@ -1,7 +1,11 @@
 package com.hic.controller;
 
 import com.hic.dto.DeviceEmployeeImportDTO;
+import com.hic.dto.DeviceSyncDTO;
+import com.hic.model.DeviceConfig;
+import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.UserRepository;
+import com.hic.service.DeviceSyncService;
 import com.hic.service.DoorAttendanceSyncService;
 import com.hic.service.HikDeviceUserImportService;
 import com.hic.util.JwtUtil;
@@ -15,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -40,6 +45,12 @@ class SetupImportControllerTest {
     private DoorAttendanceSyncService doorAttendanceSyncService;
 
     @MockBean
+    private DeviceConfigRepository deviceConfigRepository;
+
+    @MockBean
+    private DeviceSyncService deviceSyncService;
+
+    @MockBean
     private JwtUtil jwtUtil;
 
     @MockBean
@@ -55,6 +66,10 @@ class SetupImportControllerTest {
         result.setMessage("ok");
 
         when(hikDeviceUserImportService.importUsersFromBranch(any())).thenReturn(result);
+        when(deviceConfigRepository.findByBranchId(10L)).thenReturn(List.of(
+                device(1L, "101", "Ofis Giriş"), device(2L, "102", "Servis giriş")));
+        when(deviceSyncService.syncDeviceNow(any(), any()))
+                .thenReturn(new DeviceSyncDTO.SyncResultDTO(true, "History synced", 20));
 
         mockMvc.perform(post("/api/setup/import-employees")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -67,6 +82,8 @@ class SetupImportControllerTest {
         verify(hikDeviceUserImportService).importUsersFromBranch(any());
         org.mockito.ArgumentCaptor<LocalDateTime> start = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
         org.mockito.ArgumentCaptor<LocalDateTime> end = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(deviceSyncService).syncDeviceNow(eq(101L), any(LocalDateTime.class));
+        verify(deviceSyncService).syncDeviceNow(eq(102L), any(LocalDateTime.class));
         verify(doorAttendanceSyncService).syncAllDevicesForImport(start.capture(), end.capture(), eq(500));
         org.assertj.core.api.Assertions.assertThat(start.getValue())
                 .isEqualTo(com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay());
@@ -88,6 +105,15 @@ class SetupImportControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.created").value(3))
                 .andExpect(jsonPath("$.data.message").value(org.hamcrest.Matchers.containsString(
-                        "keçid tarixçəsi sinxronlaşdırılmadı")));
+                        "Keçid tarixçəsi hesablanmadı")));
+    }
+
+    private DeviceConfig device(Long id, String bridgeId, String name) {
+        DeviceConfig device = new DeviceConfig();
+        device.setId(id);
+        device.setBranchId(10L);
+        device.setDeviceId(bridgeId);
+        device.setDeviceName(name);
+        return device;
     }
 }

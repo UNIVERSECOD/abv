@@ -193,6 +193,7 @@ class DeviceControllerTest {
 
     @Test
     void importUsers_syncsRecentAttendanceIncludingYesterday() throws Exception {
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(backendDevice()));
         when(hikDeviceUserImportService.importUsersFromDevice(1L))
                 .thenReturn(new HikUserInfoSearchDTO.ImportResultDTO(4, 2, 2, 0, "Import tamamlandı."));
 
@@ -203,12 +204,14 @@ class DeviceControllerTest {
         ArgumentCaptor<LocalDateTime> start = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> end = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(doorAttendanceSyncService).syncAllDevicesForImport(start.capture(), end.capture(), eq(500));
+        verify(deviceSyncService).syncDeviceNow(eq(10L), any(LocalDateTime.class));
         Assertions.assertThat(start.getValue())
                 .isEqualTo(com.hic.util.AppTimeZone.today().minusDays(1).atStartOfDay());
     }
 
     @Test
     void importUsers_keepsImportedEmployeesWhenAttendanceSyncFails() throws Exception {
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(backendDevice()));
         when(hikDeviceUserImportService.importUsersFromDevice(1L))
                 .thenReturn(new HikUserInfoSearchDTO.ImportResultDTO(4, 2, 2, 0, "Import tamamlandı."));
         when(doorAttendanceSyncService.syncAllDevicesForImport(any(), any(), eq(500)))
@@ -218,7 +221,7 @@ class DeviceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.created").value(2))
                 .andExpect(jsonPath("$.data.message").value(org.hamcrest.Matchers.containsString(
-                        "keçid tarixçəsi sinxronlaşdırılmadı")));
+                        "Keçid tarixçəsi hesablanmadı")));
     }
 
     @Test

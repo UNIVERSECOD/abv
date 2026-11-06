@@ -89,6 +89,17 @@ public class AcsEventHistoryPoller {
         }
     }
 
+    /** Explicit idempotent backfill that does not let the current cursor hide older events. */
+    public int pollDeviceSince(DeviceEntity device, OffsetDateTime startTime) throws IOException, InterruptedException {
+        ReentrantLock lock = lockFor(device.getId());
+        lock.lockInterruptibly();
+        try {
+            return pollDeviceLocked(device, startTime, true);
+        } finally {
+            lock.unlock();
+        }
+    }
+
     /** Starts a single background synchronization; repeated requests for the same device are ignored. */
     @Async
     public void pollDeviceInBackground(DeviceEntity device) {
@@ -123,6 +134,11 @@ public class AcsEventHistoryPoller {
     }
 
     private int pollDeviceLocked(DeviceEntity device) throws IOException, InterruptedException {
+        return pollDeviceLocked(device, null, false);
+    }
+
+    private int pollDeviceLocked(DeviceEntity device, OffsetDateTime forcedStartTime, boolean ignoreCursorSerial)
+            throws IOException, InterruptedException {
         IsapiClient.DeviceStatusCheckResult status = isapiClient.checkDeviceStatus(device);
         if (!status.online()) {
             deviceCursorService.markOffline(device.getId());
@@ -131,7 +147,7 @@ public class AcsEventHistoryPoller {
         // Connectivity and history progress are separate: a slow backlog must not keep the device offline.
         deviceCursorService.markOnline(device.getId());
 
-        List<ParsedAcsEvent> events = fetchMissedEvents(device);
+        List<ParsedAcsEvent> events = fetchMissedEvents(device, forcedStartTime, ignoreCursorSerial);
         log.info("HistoryPoller: device={} history returned {} event(s)", device.getId(), events.size());
 
         long maxSerialIngested = 0L;
@@ -166,16 +182,19 @@ public class AcsEventHistoryPoller {
         return devicePollLocks.computeIfAbsent(deviceId, ignored -> new ReentrantLock());
     }
 
-    private List<ParsedAcsEvent> fetchMissedEvents(DeviceEntity device)
+    private List<ParsedAcsEvent> fetchMissedEvents(
+            DeviceEntity device,
+            OffsetDateTime forcedStartTime,
+            boolean ignoreCursorSerial)
             throws IOException, InterruptedException {
 
         DeviceCursorEntity cursor = cursorRepository.findById(device.getId()).orElse(null);
         OffsetDateTime now = OffsetDateTime.now();
-        OffsetDateTime startTime = resolveStartTime(
-                cursor != null ? cursor.getLastEventTime() : null,
-                now);
+        OffsetDateTime startTime = forcedStartTime != null
+                ? forcedStartTime
+                : resolveStartTime(cursor != null ? cursor.getLastEventTime() : null, now);
 
-        long afterSerialNo = (cursor != null && cursor.getLastSerialNo() != null)
+        long afterSerialNo = !ignoreCursorSerial && cursor != null && cursor.getLastSerialNo() != null
                 ? cursor.getLastSerialNo()
                 : 0L;
 

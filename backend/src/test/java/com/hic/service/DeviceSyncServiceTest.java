@@ -87,4 +87,20 @@ class DeviceSyncServiceTest {
         assertThat(result.getRecordsSynced()).isEqualTo(3);
         server.verify();
     }
+
+    @Test
+    void syncDeviceNow_waitsForHistoryCompletionEndpoint() {
+        server.expect(requestTo("http://host.docker.internal:8080/api/devices/9/sync-now?start=2026-11-05T20:00:00Z"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("""
+                        {"success":true,"message":"Device history synchronization completed","recordsSynced":17}
+                        """, MediaType.APPLICATION_JSON));
+
+        DeviceSyncDTO.SyncResultDTO result = service.syncDeviceNow(
+                9L, java.time.LocalDateTime.of(2026, 11, 6, 0, 0));
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getRecordsSynced()).isEqualTo(17);
+        server.verify();
+    }
 }

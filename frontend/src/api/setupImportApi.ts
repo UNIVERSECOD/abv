@@ -46,6 +46,7 @@ export interface DeviceEmployeeImportResult {
   uniquePersons: number
   created: number
   skippedExisting: number
+  skippedTerminated?: number
   skippedConflict: number
   crossBranchLinked: number
   accessLinked: number

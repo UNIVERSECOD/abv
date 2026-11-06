@@ -125,6 +125,7 @@ class HikDeviceUserImportServiceTest {
         });
         when(employeeDeviceAccessRepository.existsByEmployeeIdAndDeviceConfigId(anyLong(), anyLong()))
                 .thenReturn(false);
+        when(employeeFaceImageService.hasFaceImage(50L)).thenReturn(true);
 
         DeviceEmployeeImportDTO.ImportResult result = service.importUsersFromBranch(
                 new DeviceEmployeeImportDTO.ImportRequest(10L, null, false));
@@ -135,6 +136,7 @@ class HikDeviceUserImportServiceTest {
         assertThat(result.getCreatedPersons().get(0).getEmployeeId()).isEqualTo("BAK-1001");
         assertThat(result.getCreatedPersons().get(0).getDeviceEmployeeNo()).isEqualTo("1001");
         assertThat(result.getCreatedPersons().get(0).getHomeBranchId()).isEqualTo(10L);
+        assertThat(result.getFacesSkippedExisting()).isEqualTo(1);
 
         ArgumentCaptor<Employee> empCaptor = ArgumentCaptor.forClass(Employee.class);
         verify(employeeRepository, times(1)).save(empCaptor.capture());
@@ -188,6 +190,7 @@ class HikDeviceUserImportServiceTest {
                 new DeviceEmployeeImportDTO.ImportRequest(10L, null, false));
 
         assertThat(result.getSkippedExisting()).isEqualTo(1);
+        assertThat(result.getSkippedTerminated()).isEqualTo(1);
         assertThat(result.getCreated()).isZero();
         assertThat(result.getAccessLinked()).isZero();
         verify(employeeRepository, never()).save(any(Employee.class));

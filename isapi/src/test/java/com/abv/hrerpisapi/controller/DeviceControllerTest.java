@@ -143,6 +143,20 @@ class DeviceControllerTest {
     }
 
     @Test
+    void syncNow_waitsForHistoryAndReturnsIngestedCount() throws Exception {
+        DeviceEntity device = enabledDevice();
+        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
+        when(historyPoller.pollDevice(device)).thenReturn(17);
+
+        DeviceController.DeviceSyncResponse response = controller.syncNow(1L, null);
+
+        verify(deviceWorkerService).startDevice(device);
+        verify(historyPoller).pollDevice(device);
+        assertThat(response.success()).isTrue();
+        assertThat(response.recordsSynced()).isEqualTo(17);
+    }
+
+    @Test
     void updateName_withBlankPassword_preservesCredentialAndWorker() {
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));

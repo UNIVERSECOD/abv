@@ -18,6 +18,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -118,6 +119,17 @@ public class DeviceSyncService {
         return result;
     }
 
+    public DeviceSyncDTO.SyncResultDTO syncDeviceNow(Long id, LocalDateTime start) {
+        log.info("ActionLog.syncDeviceNow.start");
+        DeviceSyncDTO.SyncResultDTO result = exchangeForObject(
+                deviceSyncNowUrl(id, start),
+                HttpMethod.POST,
+                null,
+                DeviceSyncDTO.SyncResultDTO.class);
+        log.info("ActionLog.syncDeviceNow.end");
+        return result;
+    }
+
     private DeviceSyncDTO.DeviceConfigDTO toConfigDTO(DeviceSyncDTO.IsapiDeviceResponse response) {
         log.info("ActionLog.toConfigDTO.start");
         DeviceSyncDTO.DeviceConfigDTO dto = new DeviceSyncDTO.DeviceConfigDTO();
@@ -208,6 +220,14 @@ public class DeviceSyncService {
 
     private String deviceSyncUrl(Long id) {
         return deviceUrl(id) + "/sync";
+    }
+
+    private String deviceSyncNowUrl(Long id, LocalDateTime start) {
+        return org.springframework.web.util.UriComponentsBuilder
+                .fromHttpUrl(deviceUrl(id) + "/sync-now")
+                .queryParamIfPresent("start", java.util.Optional.ofNullable(start)
+                        .map(value -> value.atZone(AppTimeZone.ZONE).toInstant().toString()))
+                .build().toUriString();
     }
 
     private String trimTrailingSlash(String url) {

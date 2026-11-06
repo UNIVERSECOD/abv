@@ -78,6 +78,28 @@ class AcsEventHistoryPollerTest {
     }
 
     @Test
+    void pollDeviceSince_usesRequestedStartAndIgnoresNewerCursorSerial() throws Exception {
+        DeviceEntity device = new DeviceEntity();
+        device.setId(1L);
+        DeviceCursorEntity cursor = new DeviceCursorEntity();
+        cursor.setDeviceId(1L);
+        cursor.setLastSerialNo(900L);
+        cursor.setLastEventTime(OffsetDateTime.parse("2026-11-06T17:00:00+04:00"));
+        OffsetDateTime requestedStart = OffsetDateTime.parse("2026-11-05T00:00:00+04:00");
+
+        when(cursorRepository.findById(1L)).thenReturn(Optional.of(cursor));
+        when(isapiClient.checkDeviceStatus(device))
+                .thenReturn(new IsapiClient.DeviceStatusCheckResult(true, 200, "OK"));
+        when(isapiClient.searchAcsEvents(device, requestedStart, 0L, 30)).thenReturn(List.of());
+
+        int ingested = poller.pollDeviceSince(device, requestedStart);
+
+        assertThat(ingested).isZero();
+        verify(isapiClient).searchAcsEvents(device, requestedStart, 0L, 30);
+        assertThat(cursor.getLastSerialNo()).isEqualTo(900L);
+    }
+
+    @Test
     void scheduledPoll_historyFailure_keepsSuccessfulConnectivityStatus() throws Exception {
         DeviceEntity device = new DeviceEntity();
         device.setId(2L);

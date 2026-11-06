@@ -186,6 +186,13 @@ public class HikDeviceUserImportService {
             }
         }
 
+        Set<Long> employeesWithExistingFace = byEmployeeNo.values().stream()
+                .filter(person -> !person.conflict && person.employeePk != null)
+                .map(person -> person.employeePk)
+                .filter(employeeFaceImageService::hasFaceImage)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        result.setFacesSkippedExisting(employeesWithExistingFace.size());
+
         // After employees exist (or are linked), pull FDLib faces from each successful device
         // and associate them by FPID ↔ device employeeNo. Never assign a face without a match.
         for (DeviceEmployeeImportDTO.DeviceScanStatus status : result.getDeviceStatuses()) {
@@ -228,10 +235,10 @@ public class HikDeviceUserImportService {
         }
 
         result.setMessage(String.format(
-                "Import complete: branch=%s prefix=%s devices=%d failedDevices=%d fetched=%d unique=%d created=%d skippedExisting=%d crossBranchLinked=%d skippedConflict=%d accessLinked=%d facesSynced=%d facesSkippedExisting=%d facesSkippedNoMatch=%d facesFailed=%d writtenToOther=%d alreadyOnOther=%d otherWriteFailed=%d facesOther=%d facesOtherFailed=%d errors=%d",
+                "Import complete: branch=%s prefix=%s devices=%d failedDevices=%d fetched=%d unique=%d created=%d skippedExisting=%d skippedTerminated=%d crossBranchLinked=%d skippedConflict=%d accessLinked=%d facesSynced=%d facesSkippedExisting=%d facesSkippedNoMatch=%d facesFailed=%d writtenToOther=%d alreadyOnOther=%d otherWriteFailed=%d facesOther=%d facesOtherFailed=%d errors=%d",
                 branch.getName(), branchPrefix, result.getDevicesScanned(), result.getDevicesFailed(),
                 result.getTotalFetched(), result.getUniquePersons(), result.getCreated(),
-                result.getSkippedExisting(), result.getCrossBranchLinked(), result.getSkippedConflict(),
+                result.getSkippedExisting(), result.getSkippedTerminated(), result.getCrossBranchLinked(), result.getSkippedConflict(),
                 result.getAccessLinked(), result.getFacesSynced(), result.getFacesSkippedExisting(),
                 result.getFacesSkippedNoMatch(), result.getFacesFailed(),
                 result.getWrittenToOtherDevices(), result.getAlreadyOnOtherDevices(),
@@ -428,6 +435,7 @@ public class HikDeviceUserImportService {
             result.setSkippedExisting(result.getSkippedExisting() + 1);
             Employee existing = sameBranchExisting.get();
             if (Employee.EmploymentStatus.TERMINATED.equals(existing.getEmploymentStatus())) {
+                result.setSkippedTerminated(result.getSkippedTerminated() + 1);
                 log.info("Skipping terminated employee during device import: employeeId={} deviceEmployeeNo={}",
                         existing.getEmployeeId(), person.employeeNo);
                 return;
@@ -446,6 +454,7 @@ public class HikDeviceUserImportService {
             Employee existing = crossBranchSamePerson.get();
             if (Employee.EmploymentStatus.TERMINATED.equals(existing.getEmploymentStatus())) {
                 result.setSkippedExisting(result.getSkippedExisting() + 1);
+                result.setSkippedTerminated(result.getSkippedTerminated() + 1);
                 log.info("Skipping terminated cross-branch employee during device import: employeeId={} deviceEmployeeNo={}",
                         existing.getEmployeeId(), person.employeeNo);
                 return;
@@ -519,7 +528,6 @@ public class HikDeviceUserImportService {
             boolean listedInBulkIndex = faceUrlByFpid.containsKey(fpidKey);
 
             if (employeeFaceImageService.hasFaceImage(person.employeePk)) {
-                result.setFacesSkippedExisting(result.getFacesSkippedExisting() + 1);
                 continue;
             }
 

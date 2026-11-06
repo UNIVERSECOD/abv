@@ -256,6 +256,7 @@ export default function DeviceEmployeeImportPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Stat label="Yaradılan" value={result.created} tone="green" />
               <Stat label="Mövcud (keçildi)" value={result.skippedExisting} />
+              <Stat label="İşdən çıxmış (keçildi)" value={result.skippedTerminated || 0} />
               <Stat label="Digər ərazi əlaqəsi" value={result.crossBranchLinked || 0} tone="green" />
               <Stat label="Konflikt" value={result.skippedConflict} tone="amber" />
               <Stat label="Xəta" value={result.errors} tone="red" />
@@ -264,7 +265,7 @@ export default function DeviceEmployeeImportPage() {
               <Stat label="Giriş əlaqələndirildi" value={result.accessLinked} tone="green" />
               <Stat label="Üz şəkli sinxron" value={result.facesSynced || 0} tone="green" />
               <Stat label="Üzü olmayan" value={result.facesSkippedNoMatch || 0} />
-              <Stat label="Şəkil artıq var" value={result.facesSkippedExisting || 0} />
+              <Stat label="Mövcud üz şəkli (unikal)" value={result.facesSkippedExisting || 0} />
               <Stat label="Şəkil xətası" value={result.facesFailed || 0} tone="red" />
               <Stat label="Digər cihazlara yazıldı" value={result.writtenToOtherDevices || 0} tone="green" />
               <Stat label="Artıq digər cihazda var idi" value={result.alreadyOnOtherDevices || 0} />

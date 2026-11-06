@@ -84,7 +84,7 @@ public class EmployeeService {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy != null ? sortBy : "id"));
         Long tenantId = TenantContext.getTenantId();
         Long effectiveBranchId = userScopeService.resolveBranchScope(requestedBranchId);
-        String normalizedQuery = query == null || query.isBlank() ? null : query.trim();
+        String normalizedQuery = query == null || query.isBlank() ? "" : query.trim();
         String normalizedShift = shiftType == null || shiftType.isBlank()
                 ? null
                 : shiftType.trim().toUpperCase(java.util.Locale.ROOT);

@@ -44,8 +44,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
                    OR (:shiftType = 'STANDARD' AND UPPER(COALESCE(e.shiftType, '')) IN ('MORNING','NIGHT','STANDARD'))
                    OR (:shiftType = 'FLEXIBLE' AND UPPER(COALESCE(e.shiftType, '')) IN ('FLEXIBLE','FIRST_ENTRY','SERBEST','FREE_SHIFT','FREE'))
                    OR UPPER(COALESCE(e.shiftType, '')) = UPPER(:shiftType))
-              AND (:query IS NULL
-                   OR LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%'))
+              AND (LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%'))
                    OR LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%'))
                    OR LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%'))
                    OR LOWER(e.employeeId) LIKE LOWER(CONCAT('%', :query, '%'))

@@ -222,16 +222,10 @@ export default function AttendancePage() {
   useEffect(() => {
     let cancelled = false
     setOpenSessionsLoading(true)
-    attendanceApi.getOpenSessions()
-      .then((response) => {
-        if (!cancelled) setOpenSessions(response.data?.data ?? [])
-      })
-      .catch(() => {
-        if (!cancelled) setOpenSessions([])
-      })
-      .finally(() => {
-        if (!cancelled) setOpenSessionsLoading(false)
-      })
+    attendanceApi.getOpenSessions(0, 10)
+      .then((response) => { if (!cancelled) setOpenSessions(response.data?.data?.content ?? []) })
+      .catch(() => { if (!cancelled) setOpenSessions([]) })
+      .finally(() => { if (!cancelled) setOpenSessionsLoading(false) })
     return () => { cancelled = true }
   }, [openRefreshToken])
 
@@ -269,6 +263,7 @@ export default function AttendancePage() {
 
       try {
         await loadStoredAttendance()
+        if (!cancelled) setOpenRefreshToken((value) => value + 1)
       } catch (requestError: unknown) {
         if (!cancelled) {
           setAttendanceRows([])
@@ -288,7 +283,6 @@ export default function AttendancePage() {
 
       try {
         await loadStoredAttendance()
-        if (!cancelled) setOpenRefreshToken((value) => value + 1)
       } catch {
         if (!cancelled) setSyncWarning('Sinxron tamamlandı, amma yenilənmiş məlumatları yükləmək alınmadı.')
       }
@@ -314,20 +308,15 @@ export default function AttendancePage() {
     setCorrectionSaving(true)
     setCorrectionError(null)
     try {
-      await attendanceApi.correctSession(editingSession.attendanceLogId, {
-        checkInTime: correctionCheckIn,
-        checkOutTime: correctionCheckOut,
-        reason: correctionReason.trim(),
-      })
+      await attendanceApi.correctSession(editingSession.attendanceLogId, { checkInTime: correctionCheckIn, checkOutTime: correctionCheckOut, reason: correctionReason.trim() })
       setEditingSession(null)
       setOpenRefreshToken((value) => value + 1)
       setAttendanceRefreshToken((value) => value + 1)
     } catch (requestError: unknown) {
       setCorrectionError((requestError as Error).message || 'Düzəliş saxlanılmadı')
-    } finally {
-      setCorrectionSaving(false)
-    }
+    } finally { setCorrectionSaving(false) }
   }
+
 
 
 

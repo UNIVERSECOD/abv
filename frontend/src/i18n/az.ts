@@ -63,6 +63,7 @@ export const az = {
     navDepartments: 'Departamentlər',
     navPositions: 'Vəzifələr',
     navAttendance: 'Əməkdaş davamiyyəti',
+    navOpenSessions: 'Açıq sessiyalar',
     navReports: 'Davamiyyət hesabatları',
     navTabel: 'Tabel',
     navWorkSchedule: 'İş qrafiki',

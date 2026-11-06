@@ -18,6 +18,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.Optional;
+import java.util.List;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,6 +60,33 @@ class AttendanceSessionManagementServiceTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    @Test
+    void getOpenSessions_returnsRequestedTenantScopedPage() {
+        AttendanceLog session = new AttendanceLog();
+        session.setId(10L);
+        session.setEmployeeId(5L);
+        session.setCheckInTime(LocalDate.of(2026, 11, 6).atTime(9, 0));
+        session.setStatus("OPEN");
+        Employee employee = new Employee();
+        employee.setId(5L);
+        employee.setTenantId(1L);
+        employee.setEmployeeId("BAOFIS-1001");
+        employee.setFirstName("Test");
+        employee.setLastName("Employee");
+        when(userScopeService.resolveBranchScope(null)).thenReturn(7L);
+        when(attendanceLogRepository.findOpenSessions(1L, 7L, PageRequest.of(1, 10)))
+                .thenReturn(new PageImpl<>(List.of(session), PageRequest.of(1, 10), 21));
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee));
+        when(sessionPolicy.effectiveStatus(employee, session)).thenReturn("OPEN");
+
+        var result = service.getOpenSessions(1, 10);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getTotalElements()).isEqualTo(21);
+        assertThat(result.getCurrentPage()).isEqualTo(1);
+        assertThat(result.getPageSize()).isEqualTo(10);
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.hic.repository;
 
 import com.hic.model.AttendanceLog;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -86,6 +87,19 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
     java.util.Optional<AttendanceLog> findFirstByEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
             Long employeeId);
     List<AttendanceLog> findByTenantIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(Long tenantId);
+
+    @Query("""
+            select attendance from AttendanceLog attendance, Employee employee
+            where attendance.tenantId = :tenantId
+              and attendance.checkOutTime is null
+              and employee.id = attendance.employeeId
+              and employee.tenantId = :tenantId
+              and (:branchId is null or employee.branchId = :branchId)
+            order by attendance.checkInTime desc, attendance.id desc
+            """)
+    Page<AttendanceLog> findOpenSessions(@Param("tenantId") Long tenantId,
+                                         @Param("branchId") Long branchId,
+                                         Pageable pageable);
 
     java.util.Optional<AttendanceLog> findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNotNullOrderByCheckOutTimeDesc(
             Long tenantId, Long employeeId);

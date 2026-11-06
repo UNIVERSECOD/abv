@@ -36,8 +36,8 @@ export const attendanceApi = {
     client.get('/attendance/report', { params }),
   exportExcel: async (params: AttendanceReportFilters) =>
     client.get('/attendance/report/export', { params, responseType: 'blob' }),
-  getOpenSessions: () =>
-    client.get<ApiResponse<OpenAttendanceSession[]>>('/attendance/open-sessions'),
+  getOpenSessions: (page = 0, size = 20) =>
+    client.get<ApiResponse<PaginatedResponse<OpenAttendanceSession>>>('/attendance/open-sessions', { params: { page, size } }),
   correctSession: (attendanceLogId: number, data: AttendanceCorrectionRequest) =>
     client.put(`/attendance/sessions/${attendanceLogId}`, data),
 }

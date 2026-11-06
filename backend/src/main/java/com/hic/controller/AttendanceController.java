@@ -11,6 +11,7 @@ import com.hic.dto.DailyAttendanceSummaryDTO;
 import com.hic.dto.DoorAttendanceSyncResultDTO;
 import com.hic.dto.PaginatedResponse;
 import com.hic.dto.OpenAttendanceSessionDTO;
+import com.hic.dto.PaginatedResponse;
 import com.hic.service.AttendanceCalculationService;
 import com.hic.service.AttendanceReportService;
 import com.hic.service.AttendanceService;
@@ -140,9 +141,14 @@ public class AttendanceController {
     }
 
     @GetMapping("/open-sessions")
-    public ResponseEntity<ApiResponse<List<OpenAttendanceSessionDTO>>> getOpenSessions() {
+    public ResponseEntity<ApiResponse<PaginatedResponse<OpenAttendanceSessionDTO>>> getOpenSessions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        if (page < 0 || size < 1 || size > 100) {
+            throw new com.hic.exception.BadRequestException("Səhifə və ölçü yanlışdır");
+        }
         return ResponseEntity.ok(ApiResponse.success(
-                attendanceSessionManagementService.getOpenSessions()));
+                attendanceSessionManagementService.getOpenSessions(page, size)));
     }
 
     @PutMapping("/sessions/{attendanceLogId}")

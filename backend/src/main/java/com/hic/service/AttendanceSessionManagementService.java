@@ -3,6 +3,7 @@ package com.hic.service;
 import com.hic.dto.AttendanceCorrectionRequest;
 import com.hic.dto.AttendanceLogDTO;
 import com.hic.dto.OpenAttendanceSessionDTO;
+import com.hic.dto.PaginatedResponse;
 import com.hic.exception.ResourceNotFoundException;
 import com.hic.exception.BadRequestException;
 import com.hic.model.AttendanceLog;
@@ -17,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -41,23 +43,24 @@ public class AttendanceSessionManagementService {
     private final AttendanceScheduleResolver scheduleResolver;
 
     @Transactional
-    public List<OpenAttendanceSessionDTO> getOpenSessions() {
+    public PaginatedResponse<OpenAttendanceSessionDTO> getOpenSessions(int page, int size) {
         Long tenantId = requireTenantId();
-        List<AttendanceLog> sessions = attendanceLogRepository
-                .findByTenantIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(tenantId);
+        Long branchScope = userScopeService.resolveBranchScope(null);
+        var sessionPage = attendanceLogRepository.findOpenSessions(
+                tenantId, branchScope, PageRequest.of(page, size));
+        List<AttendanceLog> sessions = sessionPage.getContent();
         Set<Long> employeeIds = sessions.stream()
                 .map(AttendanceLog::getEmployeeId)
                 .collect(Collectors.toSet());
         Map<Long, Employee> employees = employeeRepository.findAllById(employeeIds).stream()
                 .filter(employee -> tenantId.equals(employee.getTenantId()))
                 .collect(Collectors.toMap(Employee::getId, Function.identity()));
-        Long branchScope = userScopeService.resolveBranchScope(null);
-
-        return sessions.stream()
+        List<OpenAttendanceSessionDTO> content = sessions.stream()
                 .filter(session -> employees.containsKey(session.getEmployeeId()))
-                .filter(session -> isInBranchScope(employees.get(session.getEmployeeId()), branchScope))
                 .map(session -> toOpenSession(session, employees.get(session.getEmployeeId())))
                 .toList();
+        return PaginatedResponse.of(content, sessionPage.getTotalElements(),
+                sessionPage.getTotalPages(), sessionPage.getNumber(), sessionPage.getSize());
     }
 
     @Transactional

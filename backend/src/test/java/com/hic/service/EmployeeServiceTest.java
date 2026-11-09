@@ -177,7 +177,7 @@ class EmployeeServiceTest {
     @Test
     void create_validDTO_savesEmployee() {
         when(departmentRepository.existsById(1L)).thenReturn(true);
-        when(employeeRepository.count()).thenReturn(0L);
+        testEmployeeDTO.setDeviceEmployeeNo("1001");
         when(employeeRepository.save(any(Employee.class))).thenAnswer(inv -> {
             Employee e = inv.getArgument(0);
             e.setId(1L);
@@ -235,7 +235,7 @@ class EmployeeServiceTest {
 
         when(positionRepository.findById(5L)).thenReturn(Optional.of(position));
         when(timetableRepository.findById(7L)).thenReturn(Optional.of(timetable));
-        when(employeeRepository.count()).thenReturn(0L);
+        testEmployeeDTO.setDeviceEmployeeNo("1001");
         when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> {
             Employee employee = invocation.getArgument(0);
             employee.setId(1L);
@@ -311,7 +311,7 @@ class EmployeeServiceTest {
     void create_isapiSyncFails_stillPersistsEmployee() {
         DeviceConfig targetDevice = device(10L, "101", 1L);
         when(departmentRepository.existsById(1L)).thenReturn(true);
-        when(employeeRepository.count()).thenReturn(0L);
+        testEmployeeDTO.setDeviceEmployeeNo("1001");
         when(employeeRepository.save(any(Employee.class))).thenAnswer(inv -> {
             Employee e = inv.getArgument(0);
             e.setId(1L);

@@ -16,6 +16,8 @@ interface EmployeeState {
   terminateEmployee: (id: number, terminationDate: string) => Promise<EmployeeTerminationResult>
 }
 
+let employeeListRequestId = 0
+
 export const useEmployeeStore = create<EmployeeState>((set, get) => ({
   employees: [],
   totalElements: 0,
@@ -25,10 +27,14 @@ export const useEmployeeStore = create<EmployeeState>((set, get) => ({
   error: null,
   filters: {},
   fetchEmployees: async (page = 0, size = 20, filters = get().filters) => {
-    set({ loading: true, error: null })
+    const requestId = ++employeeListRequestId
+    set({ loading: true, error: null, filters })
     try {
       const res = await employeeApi.getAll(page, size, filters)
+      if (requestId !== employeeListRequestId) return false
       const data: PaginatedResponse<Employee> = res.data
+      const lastPage = Math.max(0, data.totalPages - 1)
+      if (page > lastPage) return get().fetchEmployees(lastPage, size, filters)
       set({
         employees: data.content,
         totalElements: data.totalElements,
@@ -39,6 +45,7 @@ export const useEmployeeStore = create<EmployeeState>((set, get) => ({
       })
       return true
     } catch (e: unknown) {
+      if (requestId !== employeeListRequestId) return false
       set({ error: (e as Error).message, loading: false })
       return false
     }

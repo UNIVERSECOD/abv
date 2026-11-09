@@ -47,7 +47,7 @@ class AttendanceReportValidationTest {
     @CsvSource(delimiter = '|', quoteCharacter = '"', value = {
             "/api/tabel?year=2026&month=0 | Ay 1 ilə 12 arasında olmalıdır.",
             "/api/tabel?year=2026&month=0&mode=MCG | Ay 1 ilə 12 arasında olmalıdır.",
-            "/api/tabel?year=2026&month=10&mode=INVALID | 'mode' parametrinin formatı yanlışdır.",
+            "/api/tabel?year=2026&month=10&branchId=INVALID | 'branchId' parametrinin formatı yanlışdır.",
             "/api/tabel?year=2026&month=13 | Ay 1 ilə 12 arasında olmalıdır.",
             "/api/tabel/export?year=2026&month=13 | Ay 1 ilə 12 arasında olmalıdır.",
             "/api/tabel?year=0&month=10 | İl 1 ilə 9999 arasında olmalıdır.",

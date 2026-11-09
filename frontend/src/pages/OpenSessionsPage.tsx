@@ -11,6 +11,7 @@ export default function OpenSessionsPage() {
   const [page, setPage] = useState(0)
   const [data, setData] = useState<PaginatedResponse<OpenAttendanceSession> | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [editing, setEditing] = useState<OpenAttendanceSession | null>(null)
   const [checkIn, setCheckIn] = useState('')
@@ -20,11 +21,28 @@ export default function OpenSessionsPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    let active = true
     setLoading(true)
+    setLoadError(false)
     attendanceApi.getOpenSessions(page, pageSize)
-      .then(response => setData(response.data?.data ?? null))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false))
+      .then(response => {
+        if (!active) return
+        const result = response.data.data
+        const lastPage = Math.max(0, result.totalPages - 1)
+        if (page > lastPage) {
+          setPage(lastPage)
+          return
+        }
+        setData(result)
+        setLoading(false)
+      })
+      .catch(() => {
+        if (!active) return
+        setData(null)
+        setLoadError(true)
+        setLoading(false)
+      })
+    return () => { active = false }
   }, [page, refresh])
 
   const edit = (session: OpenAttendanceSession) => {
@@ -45,6 +63,7 @@ export default function OpenSessionsPage() {
     <div className="overflow-hidden rounded-xl bg-white shadow-sm">
       <div className="border-b px-5 py-4 text-sm text-slate-500">Ümumi: <strong className="text-slate-800">{data?.totalElements ?? 0}</strong></div>
       {loading ? <div className="p-8 text-center text-slate-400">Yüklənir...</div>
+        : loadError ? <div role="alert" className="p-8 text-center text-red-700">Sessiyalar yüklənmədi. <button className="underline" onClick={() => setRefresh(value => value + 1)}>Təkrar yoxla</button></div>
         : !data?.content.length ? <div className="p-8 text-center text-slate-400">Açıq sessiya yoxdur</div>
           : <div className="divide-y">{data.content.map(session => <div key={session.attendanceLogId} className="flex flex-wrap items-center gap-4 px-5 py-4">
             <div className="min-w-[220px] flex-1"><p className="font-medium text-slate-900">{session.fullName}</p><p className="text-xs text-slate-500">{session.employeeId}</p></div>
@@ -53,9 +72,9 @@ export default function OpenSessionsPage() {
             <button onClick={() => edit(session)} className="text-sm font-medium text-purple-700">Manual düzəlt</button>
           </div>)}</div>}
       <div className="flex items-center justify-between border-t px-5 py-4">
-        <button disabled={page === 0} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">Əvvəlki</button>
+        <button disabled={loading || page === 0} onClick={() => setPage(value => value - 1)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">Əvvəlki</button>
         <span className="text-sm text-slate-500">Səhifə {page + 1} / {Math.max(data?.totalPages ?? 1, 1)}</span>
-        <button disabled={!data || page + 1 >= data.totalPages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">Növbəti</button>
+        <button disabled={loading || !data || page + 1 >= data.totalPages} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-40">Növbəti</button>
       </div>
     </div>
     {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">

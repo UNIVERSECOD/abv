@@ -27,6 +27,8 @@ class DeviceServiceTest {
     private DeviceSyncService deviceSyncService;
     @Mock
     private DoorRepository doorRepository;
+    @Mock
+    private AnprAreaConfiguration anprAreas;
 
     @InjectMocks
     private DeviceService deviceService;

@@ -45,6 +45,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 )
 @org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc(addFilters = false)
 class DeviceControllerTest {
+    @MockBean
+    private com.hic.service.DeviceTargetPolicy targetPolicy;
+    @MockBean
+    private com.hic.service.AnprAreaConfiguration anprAreas;
+
 
     @org.junit.jupiter.api.BeforeEach
     void tenantContext() { com.hic.util.TenantContext.setTenantId(1L); }
@@ -120,7 +125,7 @@ class DeviceControllerTest {
     private DeviceSyncDTO.DeviceConfigDTO deviceConfigDto() {
         return new DeviceSyncDTO.DeviceConfigDTO(
                 1L, "10", "Front Door", "10.0.0.1", 80, "admin", null, null, null, null,
-                "ACTIVE", true, LocalDateTime.of(2026, 9, 23, 10, 30));
+                "ACTIVE", true, LocalDateTime.of(2026, 9, 23, 10, 30), false);
     }
 
     @Test
@@ -153,6 +158,49 @@ class DeviceControllerTest {
                 .andExpect(jsonPath("$.data.status").value("INACTIVE"));
 
         verify(deviceConfigRepository).save(backendDevice);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void anprEnabledChangeReconcilesAfterSavingUnderTenantLock(boolean enabled) throws Exception {
+        DeviceConfig camera = backendDevice();
+        camera.setAnpr(true);
+        camera.setBranchId(8L);
+        camera.setStatus(enabled ? "INACTIVE" : "ACTIVE");
+        var updated = deviceConfigDto();
+        updated.setStatus(enabled ? "ACTIVE" : "INACTIVE");
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(camera));
+        when(deviceSyncService.updateEnabled(eq(10L), any(DeviceSyncDTO.DeviceEnabledDTO.class))).thenReturn(updated);
+        when(deviceService.getById(1L)).thenReturn(updated);
+
+        mockMvc.perform(patch("/api/devices/1/enabled").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"enabled\":" + enabled + "}")).andExpect(status().isOk());
+
+        var order = org.mockito.Mockito.inOrder(anprAreas, deviceConfigRepository, deviceSyncService);
+        order.verify(anprAreas).lockTenant(1L);
+        order.verify(deviceConfigRepository).findById(1L);
+        order.verify(deviceSyncService).updateEnabled(eq(10L), any(DeviceSyncDTO.DeviceEnabledDTO.class));
+        order.verify(deviceConfigRepository).save(camera);
+        order.verify(anprAreas).reconcilePair(1L, 8L);
+        Assertions.assertThat(camera.getStatus()).isEqualTo(updated.getStatus());
+    }
+
+    @Test
+    void anprDeletionReconcilesAreaAfterRemovingCameraUnderTenantLock() throws Exception {
+        DeviceConfig camera = backendDevice();
+        camera.setAnpr(true);
+        camera.setBranchId(8L);
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(camera));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/devices/1"))
+                .andExpect(status().isOk());
+
+        var order = org.mockito.Mockito.inOrder(anprAreas, deviceConfigRepository, deviceSyncService);
+        order.verify(anprAreas).lockTenant(1L);
+        order.verify(deviceConfigRepository).findById(1L);
+        order.verify(deviceSyncService).deleteDevice(10L);
+        order.verify(deviceConfigRepository).deleteById(1L);
+        order.verify(anprAreas).reconcilePair(1L, 8L);
     }
 
     @Test

@@ -79,6 +79,7 @@ public class AttendanceSessionManagementService {
         }
 
         Set<LocalDate> affectedDates = new LinkedHashSet<>();
+        if (session.getAnprWorkDate() != null) affectedDates.add(session.getAnprWorkDate());
         affectedDates.addAll(AttendanceDayAllocation.affectedDates(
                 session.getCheckInTime(), session.getCheckOutTime(), shiftFor(session, employee, session.getCheckInTime())));
         affectedDates.addAll(AttendanceDayAllocation.affectedDates(
@@ -95,6 +96,14 @@ public class AttendanceSessionManagementService {
         adjustment.setCorrectedBy(currentUsername());
         adjustmentRepository.save(adjustment);
 
+        if (!java.util.Objects.equals(session.getCheckInTime(), request.getCheckInTime())) {
+            session.setEntryMethod("MANUAL");
+            session.setAnprEntryId(null);
+        }
+        if (!java.util.Objects.equals(session.getCheckOutTime(), request.getCheckOutTime())) {
+            session.setExitMethod("MANUAL");
+            session.setAnprExitId(null);
+        }
         session.setCheckInTime(request.getCheckInTime());
         session.setCheckOutTime(request.getCheckOutTime());
         session.setManualOverride(true);
@@ -110,7 +119,7 @@ public class AttendanceSessionManagementService {
 
     private OpenAttendanceSessionDTO toOpenSession(AttendanceLog session, Employee employee) {
         String effectiveStatus = sessionPolicy.effectiveStatus(employee, session);
-        if (!Boolean.TRUE.equals(session.getManualOverride())
+        if (session.getAnprWorkDate() == null && !Boolean.TRUE.equals(session.getManualOverride())
                 && !effectiveStatus.equalsIgnoreCase(session.getStatus() == null ? "" : session.getStatus())) {
             session.setStatus(effectiveStatus);
             attendanceLogRepository.save(session);

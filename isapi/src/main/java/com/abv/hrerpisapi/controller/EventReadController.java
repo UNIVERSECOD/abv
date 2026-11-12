@@ -104,13 +104,18 @@ public class EventReadController {
             }
         }
 
+        var minorByRawId = new java.util.HashMap<Long, Integer>();
+        acsRawEventRepository.findAllById(punches.stream().map(AttendancePunchEntity::getRawEventId)
+                .filter(java.util.Objects::nonNull).distinct().toList())
+                .forEach(event -> minorByRawId.put(event.getId(), event.getSubEventType()));
         return punches.stream()
                 .map(p -> new PunchResponse(
                         p.getId(),
                         p.getDeviceId(),
                         p.getEmployeeNo(),
                         p.getPunchTime(),
-                        p.getRawEventId()
+                        p.getRawEventId(),
+                        verificationMethod(minorByRawId.get(p.getRawEventId()))
                 ))
                 .toList();
     }
@@ -346,12 +351,19 @@ public class EventReadController {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private static String verificationMethod(Integer minor) {
+        if (Integer.valueOf(75).equals(minor)) return "FACE";
+        if (Integer.valueOf(1).equals(minor)) return "CARD";
+        return "ACCESS";
+    }
+
     public record PunchResponse(
             Long id,
             Long deviceId,
             String employeeNo,
             OffsetDateTime punchTime,
-            Long rawEventId
+            Long rawEventId,
+            String verificationMethod
     ) {
     }
 

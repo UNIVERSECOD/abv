@@ -117,7 +117,7 @@ public class EmployeeShiftResolver {
         if (log != null && log.getShiftType() != null && !log.getShiftType().isBlank()) {
             return new ResolvedShift(log.getTimetableId(), log.getShiftType(), true);
         }
-        LocalDate asOf = log != null && log.getCheckInTime() != null ? log.getCheckInTime().toLocalDate() : null;
+        LocalDate asOf = log == null ? null : AttendanceDayAllocation.workDate(log);
         if (asOf != null && assignmentsByEmployee != null && employee != null) {
             List<EmployeeShiftAssignment> assignments = assignmentsByEmployee.getOrDefault(employee.getId(), List.of());
             for (EmployeeShiftAssignment assignment : assignments) {

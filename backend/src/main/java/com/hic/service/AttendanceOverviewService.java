@@ -74,6 +74,8 @@ public class AttendanceOverviewService {
         List<AttendanceLog> source = logs.findByTenantIdAndCheckInTimeBetween(tenant,
                 q.getStart().atStartOfDay(), q.getEnd().atTime(LocalTime.MAX));
         source = new ArrayList<>(source);
+        source.addAll(logs.findManagedLateEntries(tenant, null, q.getStart(), q.getEnd(),
+                q.getEnd().plusDays(1).atStartOfDay()));
         source.addAll(logs.findClosedCarryIn(tenant, null, q.getStart().atStartOfDay()));
         var sourceById = index(source, AttendanceLog::getId);
         var earliest = source.stream().map(AttendanceLog::getCheckInTime).filter(Objects::nonNull)
@@ -85,8 +87,8 @@ public class AttendanceOverviewService {
             if (log.getCheckInTime() == null || !employeeMap.containsKey(log.getEmployeeId())) continue;
             String shift = log.getShiftType();
             if (shift == null || shift.isBlank())
-                shift = schedules.apply(employeeMap.get(log.getEmployeeId()), log.getCheckInTime().toLocalDate()).shiftType();
-            for (var day : AttendanceDayAllocation.affectedDates(log.getCheckInTime(), log.getCheckOutTime(), shift))
+                shift = schedules.apply(employeeMap.get(log.getEmployeeId()), AttendanceDayAllocation.workDate(log)).shiftType();
+            for (var day : AttendanceDayAllocation.affectedDates(log, shift))
                 sourceByDay.computeIfAbsent(new DayKey(log.getEmployeeId(), day), ignored -> new ArrayList<>()).add(log);
         }
         List<AttendanceOverviewRowDTO> result = new ArrayList<>();
@@ -104,7 +106,9 @@ public class AttendanceOverviewService {
                 if (q.getTimetableId() != null && !q.getTimetableId().equals(timetableId)) continue;
                 var row = new AttendanceOverviewRowDTO();
                 BeanUtils.copyProperties(detail, row);
-                row.setStatus(reportStatus(row.getStatus(), row.getDate(), row.getCheckInTime()));
+                row.setStatus(log != null && log.getAnprWorkDate() != null
+                        ? ("OPEN".equals(row.getStatus()) ? "OPEN_SESSION" : row.getStatus())
+                        : reportStatus(row.getStatus(), row.getDate(), row.getCheckInTime()));
                 setTimetable(row, timetableId, timetableMap);
                 var detailStatuses = new ArrayList<String>();
                 if (row.getStatus() != null) detailStatuses.add(row.getStatus());
@@ -145,6 +149,8 @@ public class AttendanceOverviewService {
                 row.setPeriodEnd(daily.getDate());
                 row.setCheckInTime(daily.getCheckInTime());
                 row.setCheckOutTime(daily.getCheckOutTime());
+                row.setEntryMethod(daily.getEntryMethod());
+                row.setExitMethod(daily.getExitMethod());
                 row.setWorkedMinutes((int) Math.round(Optional.ofNullable(daily.getHoursWorked()).orElse(0.0) * 60));
                 row.setOvertimeMinutes(overtime(daily, schedule, dayLogs));
                 row.setLateMinutes(zero(daily.getLateMinutes()));
@@ -152,7 +158,8 @@ public class AttendanceOverviewService {
                 row.setPermissionMinutes(zero(daily.getPermissionMinutes()));
                 row.setShiftType(daily.getShiftType());
                 setTimetable(row, schedule.timetableId(), timetableMap);
-                String status = reportStatus(daily.getStatus().name(), daily.getDate(), daily.getCheckInTime());
+                String status = daily.isManagedAttendance() ? daily.getStatus().name()
+                        : reportStatus(daily.getStatus().name(), daily.getDate(), daily.getCheckInTime());
                 // Day-level badges never flow into the per-visit DETAILS path above.
                 var displayStatuses = AttendanceDisplayStatus.forDay(daily, inferenceService.inferDay(
                         AttendanceDayAllocation.forDay(dayLogs, daily.getDate(),

@@ -17,6 +17,7 @@ const BranchesPage = lazy(() => import('./pages/BranchesPage.tsx'))
 const DepartmentsPage = lazy(() => import('./pages/DepartmentsPage.tsx'))
 const PositionsPage = lazy(() => import('./pages/PositionsPage.tsx'))
 const AttendancePage = lazy(() => import('./pages/AttendancePage.tsx'))
+const TransportReportPage = lazy(() => import('./pages/TransportReportPage.tsx'))
 const OpenSessionsPage = lazy(() => import('./pages/OpenSessionsPage.tsx'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx'))
 const TabelPage = lazy(() => import('./pages/TabelPage.tsx'))
@@ -139,6 +140,7 @@ export default function App() {
           <Route path="/departments" element={<HrRoute><AppLayout><DepartmentsPage /></AppLayout></HrRoute>} />
           <Route path="/positions" element={<HrRoute><AppLayout><PositionsPage /></AppLayout></HrRoute>} />
           <Route path="/attendance" element={<HrRoute><AppLayout><AttendancePage /></AppLayout></HrRoute>} />
+          <Route path="/transport-report" element={<HrRoute><AppLayout><TransportReportPage /></AppLayout></HrRoute>} />
           <Route path="/open-sessions" element={<HrRoute><AppLayout><OpenSessionsPage /></AppLayout></HrRoute>} />
           <Route path="/reports" element={<HrRoute><AppLayout><ReportsPage /></AppLayout></HrRoute>} />
           <Route path="/tabel" element={<HrRoute><AppLayout><TabelPage /></AppLayout></HrRoute>} />

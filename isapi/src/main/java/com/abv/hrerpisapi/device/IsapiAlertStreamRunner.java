@@ -4,6 +4,7 @@ import com.abv.hrerpisapi.dao.entity.DeviceEntity;
 import com.abv.hrerpisapi.device.mapper.IsapiEventMapper;
 import com.abv.hrerpisapi.device.model.ParsedAcsEvent;
 import com.abv.hrerpisapi.service.AcsIngestService;
+import com.abv.hrerpisapi.service.AnprEventStore;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
@@ -28,12 +29,15 @@ public final class IsapiAlertStreamRunner implements Runnable {
     private static final int CURL_CONNECT_TIMEOUT_SECONDS = 5;
     private static final int CURL_PROCESS_EXIT_WAIT_MILLIS = 200;
     private static final int CURL_STDERR_TAIL_MAX_CHARS = 400;
+    private static final int MAX_PART_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_ANPR_HEADER_LINE_BYTES = 8192;
     private static final Pattern XML_TAG_PATTERN_TEMPLATE =
             Pattern.compile("<%s(?:\\s[^>]*)?>(.*?)</%s>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     private final DeviceEntity device;
     private final AcsIngestService ingestService;
     private final IsapiEventMapper eventMapper;
+    private final AnprEventStore anprEvents;
     private final int disconnectBackoffBaseSeconds;
     private final int deployExceedMaxBackoffSeconds;
 
@@ -48,11 +52,13 @@ public final class IsapiAlertStreamRunner implements Runnable {
     public IsapiAlertStreamRunner(DeviceEntity device,
                                    AcsIngestService ingestService,
                                    IsapiEventMapper eventMapper,
+                                   AnprEventStore anprEvents,
                                    int disconnectBackoffBaseSeconds,
                                    int deployExceedMaxBackoffSeconds) {
         this.device = device;
         this.ingestService = ingestService;
         this.eventMapper = eventMapper;
+        this.anprEvents = anprEvents;
         this.disconnectBackoffBaseSeconds = Math.max(1, disconnectBackoffBaseSeconds);
         this.deployExceedMaxBackoffSeconds = Math.max(1, deployExceedMaxBackoffSeconds);
     }
@@ -185,17 +191,28 @@ public final class IsapiAlertStreamRunner implements Runnable {
     private void runOnce() throws Exception {
         String url = alertStreamUrl();
 
-        Process p = new ProcessBuilder(
+        var command = new java.util.ArrayList<>(java.util.List.of(
                 "curl",
                 "-N",
                 "--connect-timeout", String.valueOf(CURL_CONNECT_TIMEOUT_SECONDS),
                 "--digest",
-                "-u", device.getUsername() + ":" + device.getPassword(),
+                "--config", "-",
                 "-H", "Accept: multipart/x-mixed-replace",
-                url
-        )
+                "-H", "Connection: keep-alive"));
+        if (device.isAnpr()) {
+            command.addAll(java.util.List.of("--speed-limit", "1", "--speed-time", "90"));
+        }
+        command.add(url);
+        Process p = new ProcessBuilder(command)
                 .redirectErrorStream(false)
                 .start();
+
+        try (var configuration = p.getOutputStream()) {
+            String credentials = device.getUsername() + ":" + device.getPassword();
+            String escaped = credentials.replace("\\", "\\\\").replace("\"", "\\\"")
+                    .replace("\r", "\\r").replace("\n", "\\n");
+            configuration.write(("user = \"" + escaped + "\"\n").getBytes(StandardCharsets.UTF_8));
+        }
 
         InputStream raw = p.getInputStream();
         InputStream error = p.getErrorStream();
@@ -208,25 +225,48 @@ public final class IsapiAlertStreamRunner implements Runnable {
         try (BufferedInputStream in = new BufferedInputStream(raw)) {
             while (true) {
                 ensureNotInterrupted();
-                int contentLength = readHeadersAndGetContentLength(in);
+                PartHeaders headers = readPartHeaders(in, device.isAnpr());
+                int contentLength = headers.length();
                 if (contentLength <= 0) continue;
+                if (device.isAnpr() && headers.image()) {
+                    in.skipNBytes(contentLength);
+                    continue;
+                }
+                if (device.isAnpr() && contentLength > MAX_PART_BYTES) {
+                    throw new IOException("ANPR stream part exceeds size limit");
+                }
 
                 byte[] body = readFully(in, contentLength);
                 ensureNotInterrupted();
-                skipOptionalCrlf(in);
+                if (!device.isAnpr()) skipOptionalCrlf(in);
 
                 int first = firstNonWhitespaceByte(body);
+                if (device.isAnpr() && first == 0 && body.length >= 3
+                        && body[0] == (byte) 0xef && body[1] == (byte) 0xbb && body[2] == (byte) 0xbf) {
+                    body = java.util.Arrays.copyOfRange(body, 3, body.length);
+                    first = firstNonWhitespaceByte(body);
+                }
                 if (first < 0) continue;
                 byte b = body[first];
+                if (b != '<' && b != '{' && b != '[') continue;
                 String payload = new String(body, StandardCharsets.UTF_8).trim();
                 if (b == '<') {
                     ResponseStatusDetails details = parseResponseStatusXml(payload);
                     if (details != null) {
                         throw new AlertStreamResponseException(details);
                     }
+                    if (device.isAnpr()) {
+                        try {
+                            anprEvents.capture(device.getId(), payload);
+                        } catch (javax.xml.stream.XMLStreamException malformed) {
+                            log.warn("Invalid ANPR XML from bridge device {}", device.getId());
+                        } catch (org.springframework.dao.DataAccessException unavailable) {
+                            throw new IOException("Unable to persist ANPR event");
+                        }
+                    }
                     continue;
                 }
-                if (b != '{' && b != '[') continue;
+                if (device.isAnpr()) continue;
 
                 try {
                     handleJson(payload);
@@ -270,22 +310,29 @@ public final class IsapiAlertStreamRunner implements Runnable {
     // Multipart parsing helpers
     // -----------------------------------------------------------------------
 
-    private static int readHeadersAndGetContentLength(InputStream in) throws IOException, InterruptedException {
+    private record PartHeaders(int length, boolean image) {}
+
+    private static PartHeaders readPartHeaders(InputStream in, boolean anpr) throws IOException, InterruptedException {
         int contentLength = -1;
+        boolean image = false;
 
         while (true) {
             ensureNotInterrupted();
-            String line = readAsciiLine(in);
+            String line = readAsciiLine(in, anpr);
             if (line == null) throw new EOFException("Stream ended");
 
             line = line.trim();
             if (line.isEmpty()) {
-                if (contentLength > 0) return contentLength;
+                if (contentLength > 0) return new PartHeaders(contentLength, image);
                 continue;
             }
 
             if (line.startsWith("--")) continue;
 
+            if (line.regionMatches(true, 0, "Content-Type:", 0, "Content-Type:".length())) {
+                String type = line.substring("Content-Type:".length()).trim();
+                image = type.regionMatches(true, 0, "image/", 0, "image/".length());
+            }
             if (line.regionMatches(true, 0, "Content-Length:", 0, "Content-Length:".length())) {
                 String v = line.substring("Content-Length:".length()).trim();
                 try {
@@ -324,7 +371,7 @@ public final class IsapiAlertStreamRunner implements Runnable {
         return -1;
     }
 
-    private static String readAsciiLine(InputStream in) throws IOException, InterruptedException {
+    private static String readAsciiLine(InputStream in, boolean anpr) throws IOException, InterruptedException {
         ByteArrayOutputStream baos = new ByteArrayOutputStream(128);
         while (true) {
             ensureNotInterrupted();
@@ -335,6 +382,7 @@ public final class IsapiAlertStreamRunner implements Runnable {
             }
             if (ch == '\n') break;
             if (ch != '\r') baos.write(ch);
+            if (anpr && baos.size() > MAX_ANPR_HEADER_LINE_BYTES) throw new IOException("ANPR stream header exceeds size limit");
         }
         return baos.toString(StandardCharsets.US_ASCII);
     }

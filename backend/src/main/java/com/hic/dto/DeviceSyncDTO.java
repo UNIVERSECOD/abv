@@ -27,6 +27,7 @@ public class DeviceSyncDTO {
         private String status;
         private boolean online;
         private LocalDateTime lastSyncTime;
+        private Boolean anpr;
     }
 
     @Data
@@ -90,6 +91,7 @@ public class DeviceSyncDTO {
         private boolean running;
         private boolean online;
         private OffsetDateTime lastSyncTime;
+        private Boolean anpr;
     }
 
     @Data
@@ -103,6 +105,8 @@ public class DeviceSyncDTO {
         private String name;
         private Boolean enabled;
         private Long branchId;
+        private Boolean anpr;
+        private String doorRole;
     }
 
     @Data
@@ -115,6 +119,7 @@ public class DeviceSyncDTO {
         private String password;
         private String name;
         private Boolean enabled;
+        private Boolean anpr;
     }
 
     @Data

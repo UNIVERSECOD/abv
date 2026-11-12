@@ -49,6 +49,7 @@ public class CombinedDeviceAttendanceService {
             session.setCombinedWorkDate(day);
             session.setCheckInTime(time);
             session.setEntryPunchId(punch.getId());
+            session.setEntryMethod(punch.getVerificationMethod());
             session.setDeviceId(punch.getDeviceId().toString());
             session.setDoorId(punch.getDeviceId() + ":null");
             session.setEventType("COMBINED_SESSION");
@@ -63,6 +64,7 @@ public class CombinedDeviceAttendanceService {
                 if (session.getCheckOutTime() == null) {
                     session.setCheckOutTime(session.getCheckInTime());
                     session.setExitPunchId(session.getEntryPunchId());
+                    session.setExitMethod(session.getEntryMethod());
                     session.setDoorId(punch.getDeviceId() + ":" + session.getDeviceId());
                 } else {
                     String exitDevice = session.getDoorId().split(":", 2)[1];
@@ -70,11 +72,13 @@ public class CombinedDeviceAttendanceService {
                 }
                 session.setCheckInTime(time);
                 session.setEntryPunchId(punch.getId());
+                session.setEntryMethod(punch.getVerificationMethod());
                 session.setDeviceId(punch.getDeviceId().toString());
             } else if (time.isAfter(session.getCheckInTime())
                     && (session.getCheckOutTime() == null || time.isAfter(session.getCheckOutTime()))) {
                 session.setCheckOutTime(time);
                 session.setExitPunchId(punch.getId());
+                session.setExitMethod(punch.getVerificationMethod());
                 session.setDoorId(session.getDeviceId() + ":" + punch.getDeviceId());
             } else {
                 return Result.UNCHANGED;

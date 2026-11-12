@@ -141,6 +141,7 @@ public class DeviceReconciliationService {
         if (tenant == null || TenantContext.getUserId() == null) throw new BadRequestException("İstifadəçi sessiyası etibarlı deyil.");
         DeviceConfig device = devices.findById(id).filter(d -> tenant.equals(d.getTenantId()))
                 .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
+        if (device.isAnpr()) throw new BadRequestException("ANPR kamera əməkdaş sinxronunu dəstəkləmir.");
         Long bridge;
         try { bridge = Long.valueOf(device.getDeviceId()); if (bridge <= 0) throw new NumberFormatException(); }
         catch (RuntimeException ex) { throw new BadRequestException("Cihazın bağlantı identifikatoru etibarlı deyil."); }

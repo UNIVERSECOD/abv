@@ -144,6 +144,10 @@ public class AcsEventHistoryPoller {
             deviceCursorService.markOffline(device.getId());
             throw new IOException("Device status check failed with HTTP " + status.statusCode());
         }
+        if (device.isAnpr()) {
+            deviceCursorService.markCameraReachable(device.getId());
+            return 0;
+        }
         // Connectivity and history progress are separate: a slow backlog must not keep the device offline.
         deviceCursorService.markOnline(device.getId());
 

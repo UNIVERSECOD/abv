@@ -540,8 +540,12 @@ public class DeviceUserService {
     }
 
     private DeviceEntity requireDevice(Long deviceId) {
-        return deviceRepository.findById(deviceId)
+        DeviceEntity device = deviceRepository.findById(deviceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Device not found"));
+        if (device.isAnpr()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ANPR camera does not support device users");
+        }
+        return device;
     }
 
     private DeviceUserEntity requireDeviceUser(Long userId) {

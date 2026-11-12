@@ -28,6 +28,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Missing JWT_SECRET}
       ENCRYPTION_SECRET_KEY: ${ENCRYPTION_SECRET_KEY:?Missing ENCRYPTION_SECRET_KEY}
       ISAPI_API_KEY: ${ISAPI_API_KEY:?Missing ISAPI_API_KEY}
+      DEVICES_ALLOWED_TARGETS: ${DEVICES_ALLOWED_TARGETS:-}
       ISAPI_BASE_URL: http://isapi:8081
       CORS_ALLOWED_ORIGINS: ${APP_ORIGIN:?Missing APP_ORIGIN}
       SPRING_PROFILES_ACTIVE: prod
@@ -51,7 +52,11 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Missing POSTGRES_PASSWORD}
       ISAPI_API_KEY: ${ISAPI_API_KEY:?Missing ISAPI_API_KEY}
       SPRING_PROFILES_ACTIVE: prod
+      ISAPI_ALLOWED_TARGETS: ${ISAPI_ALLOWED_TARGETS:-}
+      APP_RUNTIME_DIR: /app/runtime
       TZ: Asia/Baku
+    volumes:
+      - ./runtime/isapi:/app/runtime
     depends_on:
       postgres:
         condition: service_healthy

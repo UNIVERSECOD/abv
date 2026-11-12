@@ -34,6 +34,7 @@ public class McgTabelProjectionService {
         };
         var source = new ArrayList<>(logs.findByTenantIdAndCheckInTimeBetween(
                 tenantId, start.atStartOfDay(), end.atTime(LocalTime.MAX)));
+        source.addAll(logs.findManagedLateEntries(tenantId, null, start, end, end.plusDays(1).atStartOfDay()));
         source.addAll(logs.findClosedCarryIn(tenantId, null, start.atStartOfDay()));
         var ids = employees.stream().map(Employee::getId).collect(Collectors.toSet());
         var byEmployee = source.stream().filter(log -> ids.contains(log.getEmployeeId()))

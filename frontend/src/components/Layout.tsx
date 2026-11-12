@@ -88,6 +88,15 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    path: '/transport-report',
+    labelKey: 'layout.navTransportReport',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 17v2m14-2v2M3 13l3-7h12l3 7v4H3v-4Zm0 0h18M7 15h.01M17 15h.01" />
+      </svg>
+    ),
+  },
+  {
     path: '/tabel',
     labelKey: 'layout.navTabel',
     icon: (

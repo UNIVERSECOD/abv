@@ -61,6 +61,15 @@ public class AttendanceLog {
     @Column(name = "verification_method")
     private String verificationMethod;
 
+    private Long anprAreaId;
+    private java.time.LocalDate anprWorkDate;
+    private LocalDateTime anprDeadline;
+    private String entryMethod;
+    private String lastEntryMethod;
+    private String exitMethod;
+    private Long anprEntryId;
+    private Long anprExitId;
+
     /**
      * Schedule type frozen at session creation (or backfilled from assignment history).
      * Keeps historical punches under the schedule they were worked on.

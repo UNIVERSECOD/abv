@@ -1,43 +1,67 @@
 package com.abv.hrerpisapi.device;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.http.*;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.Flow;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class DigestHttpClient {
+    public static final String ANPR_PLATE_RECORD = "/ISAPI/Traffic/channels/1/licensePlateAuditData/record?format=json";
+    public static final String ANPR_PLATE_CAPABILITIES = "/ISAPI/Traffic/channels/1/licensePlateAuditData/record/capabilities?format=json";
+    public static final String ANPR_PLATE_SEARCH = "/ISAPI/Traffic/channels/1/searchLPListAudit";
+    private static final String ANPR_PLATE_DELETE = "/ISAPI/Traffic/channels/1/DelLicensePlateAuditData";
+    public static final String ANPR_PLATE_DELETE_CAPABILITIES = ANPR_PLATE_DELETE + "/capabilities?format=json";
+    private static final int MAX_CAMERA_RESPONSE_BYTES = 8 * 1024 * 1024;
     private final HttpClient client;
     private final String baseUrl;   // e.g. http://192.168.0.200:8080
     private final String username;
     private final String password;
+    private final boolean cameraReadOnly;
+    private final Duration requestTimeout;
 
     public DigestHttpClient(String baseUrl, String username, String password) {
+        this(baseUrl, username, password, false);
+    }
+
+    public DigestHttpClient(String baseUrl, String username, String password, boolean cameraReadOnly) {
+        this(baseUrl, username, password, cameraReadOnly, null);
+    }
+
+    public DigestHttpClient(String baseUrl, String username, String password, boolean cameraReadOnly, Duration requestTimeout) {
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.username = username;
         this.password = password;
+        this.cameraReadOnly = cameraReadOnly;
+        this.requestTimeout = requestTimeout;
         this.client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
     }
 
     public HttpResponse<String> get(String path) throws IOException, InterruptedException {
+        requireAllowed("GET", path);
         URI uri = URI.create(baseUrl + path);
 
         // 1) unauthenticated request to get the digest challenge
         HttpRequest req1 = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(30))
+                .timeout(requestTimeout != null ? requestTimeout : Duration.ofSeconds(cameraReadOnly ? 8 : 30))
                 .header("Accept", "*/*")
                 .GET()
                 .build();
 
-        HttpResponse<String> r1 = client.send(req1, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> r1 = client.send(req1, textResponse());
         if (r1.statusCode() != 401) return r1;
 
         Optional<String> wwwAuthOpt = r1.headers().firstValue("WWW-Authenticate");
@@ -46,20 +70,21 @@ public class DigestHttpClient {
         }
 
         DigestChallenge ch = DigestChallenge.parse(wwwAuthOpt.get());
-        String auth = buildDigestAuthorization(ch, "GET", uri.getPath());
+        String auth = buildDigestAuthorization(ch, "GET", requestTarget(uri));
 
         // 2) retry with Authorization header
         HttpRequest req2 = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(30))
+                .timeout(requestTimeout != null ? requestTimeout : Duration.ofSeconds(cameraReadOnly ? 8 : 30))
                 .header("Accept", "*/*")
                 .header("Authorization", auth)
                 .GET()
                 .build();
 
-        return client.send(req2, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        return client.send(req2, textResponse());
     }
 
     public HttpResponse<byte[]> getBytes(String path) throws IOException, InterruptedException {
+        requireAllowed("RESOURCE", path);
         String normalized = normalizePath(path);
         IOException lastError = null;
 
@@ -89,6 +114,7 @@ public class DigestHttpClient {
      * {@code @WEB…} token in the HTTP request while the digest hash uses the bare path.
      */
     public HttpResponse<byte[]> getBytesFromResourceUrl(String resourceUrl) throws IOException, InterruptedException {
+        requireAllowed("RESOURCE", resourceUrl);
         ParsedResource resource = parseResourceUrl(resourceUrl, baseUrl);
         requireSameOrigin(resource.baseUrl(), baseUrl);
         DigestHttpClient hostClient = new DigestHttpClient(resource.baseUrl(), username, password);
@@ -376,9 +402,74 @@ public class DigestHttpClient {
         return sendWithDigest("DELETE", path, contentType, body);
     }
 
+    private void requireAllowed(String method, String path) throws IOException {
+        if (cameraReadOnly && !isCameraRead(method, path)) {
+            throw new IOException("ANPR camera integration only permits status and archive reads");
+        }
+    }
+
+    static boolean isCameraRead(String method, String path) {
+        return ("GET".equals(method) && ("/ISAPI/System/deviceInfo".equals(path)
+                        || "/ISAPI/System/deviceInfo?format=json".equals(path) || ANPR_PLATE_CAPABILITIES.equals(path)
+                        || ANPR_PLATE_DELETE_CAPABILITIES.equals(path)))
+                || ("POST".equals(method) && ("/ISAPI/ContentMgmt/search".equals(path)
+                        || "/ISAPI/Intelligent/vehicleRecognition/Search/channels/1".equals(path)
+                        || ANPR_PLATE_SEARCH.equals(path)));
+    }
+
+    public HttpResponse<String> putConfirmedAnprPlateRecord(String json) throws IOException, InterruptedException {
+        if (!cameraReadOnly) throw new IOException("An ANPR camera is required");
+        return sendText("PUT", ANPR_PLATE_RECORD, "application/json; charset=UTF-8", json);
+    }
+
+    public HttpResponse<String> deleteConfirmedAnprPlateRecord(String recordId) throws IOException, InterruptedException {
+        if (!cameraReadOnly) throw new IOException("ANPR camera client required");
+        if (recordId == null || recordId.isBlank() || recordId.length() > 16) throw new IOException("Invalid record ID");
+        var body = new ObjectMapper().createObjectNode();
+        body.putArray("id").add(recordId);
+        body.put("deleteAllEnabled", false);
+        return sendText("PUT", ANPR_PLATE_DELETE + "?format=json", "application/json; charset=UTF-8", body.toString());
+    }
+
+    static String requestTarget(URI uri) {
+        return uri.getRawPath() + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+    }
+
+    private HttpResponse.BodyHandler<String> textResponse() {
+        if (!cameraReadOnly) return HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8);
+        return ignored -> new HttpResponse.BodySubscriber<>() {
+            private final HttpResponse.BodySubscriber<String> body =
+                    HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
+            private Flow.Subscription subscription;
+            private long received;
+
+            @Override public CompletionStage<String> getBody() { return body.getBody(); }
+            @Override public void onSubscribe(Flow.Subscription value) {
+                subscription = value;
+                body.onSubscribe(value);
+            }
+            @Override public void onNext(List<ByteBuffer> buffers) {
+                for (ByteBuffer buffer : buffers) received += buffer.remaining();
+                if (received > MAX_CAMERA_RESPONSE_BYTES) {
+                    subscription.cancel();
+                    body.onError(new IOException("ANPR camera response exceeds size limit"));
+                } else {
+                    body.onNext(buffers);
+                }
+            }
+            @Override public void onError(Throwable error) { body.onError(error); }
+            @Override public void onComplete() { body.onComplete(); }
+        };
+    }
+
     private HttpResponse<String> sendWithDigest(String method, String path, String contentType, String body)
             throws IOException, InterruptedException {
+        requireAllowed(method, path);
+        return sendText(method, path, contentType, body);
+    }
 
+    private HttpResponse<String> sendText(String method, String path, String contentType, String body)
+            throws IOException, InterruptedException {
         URI uri = URI.create(baseUrl + path);
 
         HttpRequest.BodyPublisher publisher =
@@ -386,34 +477,35 @@ public class DigestHttpClient {
                         : HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8);
 
         HttpRequest req1 = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(30))
+                .timeout(requestTimeout != null ? requestTimeout : Duration.ofSeconds(30))
                 .header("Accept", "application/json, application/xml, text/xml, */*")
                 .header("Content-Type", contentType)
                 .method(method, publisher)
                 .build();
 
-        HttpResponse<String> r1 = client.send(req1, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> r1 = client.send(req1, textResponse());
         if (r1.statusCode() != 401) return r1;
 
         String www = r1.headers().firstValue("WWW-Authenticate")
                 .orElseThrow(() -> new IOException("Missing WWW-Authenticate header"));
 
         DigestChallenge ch = DigestChallenge.parse(www);
-        String auth = buildDigestAuthorization(ch, method, uri.getPath());
+        String auth = buildDigestAuthorization(ch, method, requestTarget(uri));
 
         HttpRequest req2 = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(30))
+                .timeout(requestTimeout != null ? requestTimeout : Duration.ofSeconds(30))
                 .header("Accept", "application/json, application/xml, text/xml, */*")
                 .header("Content-Type", contentType)
                 .header("Authorization", auth)
                 .method(method, publisher)
                 .build();
 
-        return client.send(req2, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        return client.send(req2, textResponse());
     }
 
     private HttpResponse<String> sendWithDigestBytes(String method, String path, String contentType, byte[] body)
             throws IOException, InterruptedException {
+        requireAllowed(method, path);
 
         URI uri = URI.create(baseUrl + path);
 
@@ -435,7 +527,7 @@ public class DigestHttpClient {
                 .orElseThrow(() -> new IOException("Missing WWW-Authenticate header"));
 
         DigestChallenge ch = DigestChallenge.parse(www);
-        String auth = buildDigestAuthorization(ch, method, uri.getPath());
+        String auth = buildDigestAuthorization(ch, method, requestTarget(uri));
 
         HttpRequest req2 = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(30))

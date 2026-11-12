@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../utils/apiError'
 import { formatAttendanceDateTime } from '../utils/dateTime'
 import DeviceReconciliationModal from './DeviceReconciliationModal'
 import { useAuthStore } from '../store/authStore'
+import { doorRoleLabel } from '../i18n/labels'
 
 export default function AreaDevicesPanel({ area, branches, onClose }: { area: Branch; branches: Branch[]; onClose: () => void }) {
   const [devices, setDevices] = useState<DeviceConfig[]>([])
@@ -96,24 +97,33 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
                   <p className="text-xs text-gray-500 mt-1">IP: {d.deviceIp}</p>
                   <p className="text-xs text-gray-400 mt-1">Son sinxronizasiya: {d.lastSyncTime ? formatAttendanceDateTime(d.lastSyncTime) : 'Hələ olmayıb'}</p>
                 </div>
-                <label className="text-xs font-medium text-gray-500 w-full sm:w-40">Keçid rolu
-                  <select aria-label={`${d.deviceName} keçid rolu`} className={`${inputClass} mt-1 text-gray-700`} disabled={saving} value={d.doorRole || ''} onChange={e => { void role(d, e.target.value) }}>
+                {d.anpr ? (
+                  <div className="w-full sm:w-40">
+                    <p className="text-xs font-medium text-gray-500">ANPR kamera rolu</p>
+                    <span className="mt-1 inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                      {d.doorRole === 'ENTRY' || d.doorRole === 'EXIT' ? doorRoleLabel(d.doorRole) : 'Təyin edilməyib'}
+                    </span>
+                  </div>
+                ) : <label className="text-xs font-medium text-gray-500 w-full sm:w-40">Keçid rolu
+                  <select aria-label={`${d.deviceName} keçid rolu`} className={`${inputClass} mt-1 text-gray-700`} disabled={saving || !canReconcile} value={d.doorRole || ''} onChange={e => { void role(d, e.target.value) }}>
                     <option value="">Təyin edilməyib</option><option value="ENTRY">Giriş</option><option value="EXIT">Çıxış</option><option value="BOTH">Giriş və çıxış</option>
                   </select>
                   {!d.doorRole && <span className="block mt-1 text-amber-700">Keçid rolu seçin.</span>}
                   {d.doorRole === 'BOTH' && <span className="block mt-1 text-amber-700">İlk və son keçid ərazi üzrə birləşdirilir. Sərbəst qrafik dəstəklənmir.</span>}
-                </label>
+                </label>}
                 <div className="flex flex-wrap gap-2">
-                  <button disabled={saving} onClick={() => setMove({ device: d, areaId: '' })} className={secondaryClass}>Ərazini dəyiş</button>
-                  {canReconcile && <button disabled={saving} onClick={() => setReconciliationDevice(d)} className="px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100">Əməkdaşları uyğunlaşdır</button>}
-                  <Link className="px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors" to={`/devices?device=${d.id}`}>Cihazı idarə et</Link>
+                  {canReconcile && !d.anpr && <>
+                    <button disabled={saving} onClick={() => setMove({ device: d, areaId: '' })} className={secondaryClass}>Ərazini dəyiş</button>
+                    <button disabled={saving} onClick={() => setReconciliationDevice(d)} className="px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100">Əməkdaşları uyğunlaşdır</button>
+                  </>}
+                  <Link hidden={!canReconcile} className="px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors" to={`/devices?device=${d.id}`}>{d.anpr ? 'Kamera ayarları' : 'Cihazı idarə et'}</Link>
                 </div>
               </div>
             ))}
           </div>
           {loading ? <p className="py-8 text-sm text-center text-gray-400">Cihazlar yüklənir...</p> : !assigned.length && <p className="py-8 text-sm text-center text-gray-500">Bu əraziyə cihaz bağlanmayıb.</p>}
           <p className="text-xs text-gray-500">Onlayn vəziyyət bağlantını göstərir. Son sinxronizasiya vaxtını ayrıca yoxlayın.</p>
-          <p className="text-xs text-gray-500">Giriş və çıxış rejimi hər təqvim günü ayrıca hesablanır. Bu rejimə keçid və ərazi dəyişikliyi saxlandıqdan sonrakı keçidlərə tətbiq olunur.</p>
+          {assigned.some(d => !d.anpr) && <p className="text-xs text-gray-500">Giriş və çıxış rejimi hər təqvim günü ayrıca hesablanır. Bu rejimə keçid və ərazi dəyişikliyi saxlandıqdan sonrakı keçidlərə tətbiq olunur.</p>}
           {move && (
             <div className="rounded-xl bg-white shadow-sm border border-purple-200 p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-900">{move.device.deviceName} — ərazini dəyiş</h3>
@@ -130,7 +140,7 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
             </div>
           )}
         </div>
-        <footer className="shrink-0 px-5 sm:px-6 py-4 border-t border-gray-100 space-y-3">
+        <footer hidden={!canReconcile} className="shrink-0 px-5 sm:px-6 py-4 border-t border-gray-100 space-y-3">
           <div className="flex flex-wrap gap-3 items-end">
             <label className="text-xs font-medium text-gray-500 flex-1 min-w-[10rem]">Təyin edilməmiş cihaz
               <select className={`${inputClass} mt-1 text-gray-700`} value={selected} onChange={e => setSelected(e.target.value)} disabled={saving}>

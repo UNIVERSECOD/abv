@@ -19,11 +19,13 @@ public class EmployeeDeviceRemovalService {
     private final EmployeeDeviceRemovalJobRepository jobs;
     private final EmployeeRemovalDeviceClient client;
     private final TransactionTemplate transaction;
+    private final EmployeeVehicleService vehicles;
 
     public EmployeeTerminationResultDTO terminate(Employee employee, Set<Long> targetIds) {
         Long tenantId = Objects.requireNonNull(employee.getTenantId(), "Əməkdaşın şirkəti tapılmadı");
         boolean newlyTerminated = employee.getEmploymentStatus() != Employee.EmploymentStatus.TERMINATED;
         transaction.executeWithoutResult(tx -> {
+            vehicles.lockAssignments(tenantId);
             // Serializes simultaneous requests so the same employee/device job is never duplicated.
             Employee locked = employees.lockForTermination(tenantId, employee.getId()).orElseThrow();
             Set<Long> existing = new HashSet<>();
@@ -33,6 +35,7 @@ public class EmployeeDeviceRemovalService {
                 if (existing.contains(targetId)) continue;
                 DeviceConfig device = devices.findById(targetId)
                         .filter(d -> tenantId.equals(d.getTenantId())).orElse(null);
+                if (device != null && device.isAnpr()) continue;
                 EmployeeDeviceRemovalJob job = new EmployeeDeviceRemovalJob();
                 job.setTenantId(tenantId);
                 job.setEmployeeId(employee.getId());
@@ -53,6 +56,7 @@ public class EmployeeDeviceRemovalService {
                         : AppTimeZone.today());
             }
             employees.saveAndFlush(locked);
+            vehicles.retireAll(tenantId, locked.getId());
         });
         for (var job : jobs.findByTenantIdAndEmployeeIdOrderById(tenantId, employee.getId())) {
             if (!job.isCompleted()) attempt(tenantId, job.getId(), true);
@@ -78,6 +82,13 @@ public class EmployeeDeviceRemovalService {
                 Employee employee = employees.findByTenantIdAndId(tenantId, job.getEmployeeId()).orElseThrow();
                 DeviceConfig device = devices.findById(job.getDeviceConfigId())
                         .filter(d -> tenantId.equals(d.getTenantId())).orElseThrow();
+                if (device.isAnpr()) {
+                    job.setCompleted(true);
+                    job.setCompletedAt(AppTimeZone.now());
+                    job.setLastError(null);
+                    jobs.save(job);
+                    return;
+                }
                 if (employee.getEmploymentStatus() != Employee.EmploymentStatus.TERMINATED
                         || !Objects.equals(personNo(employee), job.getEmployeeNo())
                         || !same(device.getDeviceId(), job.getBridgeDeviceId())

@@ -51,6 +51,7 @@ const normalizeDevice = (item: Record<string, unknown>): DeviceConfig => {
     branchId,
     doorId,
     doorRole,
+    anpr: item.anpr === true,
     // Prefer explicit runtime state first, then fallback to enabled flag.
     status,
     online,

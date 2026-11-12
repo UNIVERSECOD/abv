@@ -13,6 +13,9 @@ public class EmployeeAttendanceRowDTO {
     private LocalDate date;
     private OffsetDateTime checkInTime;
     private OffsetDateTime checkOutTime;
+    private String entryMethod;
+    private String exitMethod;
+    private boolean managedAttendance;
     private Double hoursWorked;
     private Integer lateMinutes;
     private Integer earlyLeaveMinutes;

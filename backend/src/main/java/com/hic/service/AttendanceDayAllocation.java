@@ -15,6 +15,16 @@ import java.util.function.Function;
 public final class AttendanceDayAllocation {
     private AttendanceDayAllocation() {}
 
+    public static LocalDate workDate(AttendanceLog log) {
+        if (log.getAnprWorkDate() != null) return log.getAnprWorkDate();
+        return log.getCheckInTime() == null ? null : log.getCheckInTime().toLocalDate();
+    }
+
+    public static Set<LocalDate> affectedDates(AttendanceLog log, String shift) {
+        return log.getAnprWorkDate() != null ? Set.of(log.getAnprWorkDate())
+                : affectedDates(log.getCheckInTime(), log.getCheckOutTime(), shift);
+    }
+
     public static List<AttendanceLog> forDay(List<AttendanceLog> logs, LocalDate day,
             Function<LocalDate, String> fallbackShift) {
         var result = new ArrayList<AttendanceLog>();
@@ -24,8 +34,8 @@ public final class AttendanceDayAllocation {
             if (entry == null) continue;
             String shift = log.getShiftType();
             if (shift == null || shift.isBlank()) shift = fallbackShift.apply(entry.toLocalDate());
-            if (!ShiftTypes.isFlexible(shift) || exit == null || !exit.isAfter(entry)) {
-                if (entry.toLocalDate().equals(day)) result.add(log);
+            if (log.getAnprWorkDate() != null || !ShiftTypes.isFlexible(shift) || exit == null || !exit.isAfter(entry)) {
+                if (day.equals(workDate(log))) result.add(log);
                 continue;
             }
             var from = entry.isBefore(day.atStartOfDay()) ? day.atStartOfDay() : entry;

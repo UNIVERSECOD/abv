@@ -27,6 +27,8 @@ public class DeviceWorkerService {
     private final DeviceRepository deviceRepository;
     private final AcsIngestService acsIngestService;
     private final IsapiEventMapper eventMapper;
+    private final AnprEventStore anprEvents;
+    private final com.abv.hrerpisapi.device.DeviceTargetPolicy targetPolicy;
 
     @Value("${isapi.alertStream.disconnectBackoffBaseSeconds:3}")
     private int disconnectBackoffBaseSeconds;
@@ -44,6 +46,7 @@ public class DeviceWorkerService {
     }
 
     public void startDevice(DeviceEntity device) {
+        targetPolicy.requireAllowed(device.getIp());
         Thread existing = activeThreads.get(device.getId());
         if (existing != null) {
             if (existing.isAlive()) {
@@ -59,6 +62,7 @@ public class DeviceWorkerService {
                 device,
                 acsIngestService,
                 eventMapper,
+                anprEvents,
                 disconnectBackoffBaseSeconds,
                 deployExceedMaxBackoffSeconds);
         Thread t = new Thread(runner, "alertStream-device-" + device.getId());

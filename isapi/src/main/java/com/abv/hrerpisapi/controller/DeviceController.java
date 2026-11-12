@@ -33,6 +33,7 @@ public class DeviceController {
     private final DeviceWorkerService deviceWorkerService;
     private final IsapiClient isapiClient;
     private final AcsEventHistoryPoller historyPoller;
+    private final com.abv.hrerpisapi.device.DeviceTargetPolicy targetPolicy;
 
     @GetMapping
     public List<DeviceResponse> list(@RequestParam(required = false) Boolean enabled) {
@@ -61,30 +62,42 @@ public class DeviceController {
     public DeviceResponse create(@RequestBody DeviceUpsertRequest request) {
         log.info("ActionLog.device.create.started ip={} enabled={}", trimToNull(request.ip()), request.enabled());
         DeviceEntity device = new DeviceEntity();
+        targetPolicy.requireAllowed(request.ip());
         applyUpsert(device, request, true);
+        requireDistinctCameraEndpoint(device);
+        requireOnline(device);
         DeviceEntity saved = deviceRepository.save(device);
         if (saved.isEnabled()) {
             deviceWorkerService.startDevice(saved);
         }
         log.info("ActionLog.device.create.ended deviceId={} ip={} enabled={}", saved.getId(), saved.getIp(), saved.isEnabled());
-        return toResponse(saved, findCursor(saved.getId()));
+        return toResponse(saved, saved.isAnpr() ? deviceCursorService.markCameraReachable(saved.getId())
+                : deviceCursorService.markOnline(saved.getId()));
     }
 
     @PutMapping("/{id}")
     public DeviceResponse update(@PathVariable Long id, @RequestBody DeviceUpsertRequest request) {
         log.info("ActionLog.device.update.started deviceId={} ip={} enabled={}", id, trimToNull(request.ip()), request.enabled());
+        targetPolicy.requireAllowed(request.ip());
         DeviceEntity device = requireDevice(id);
         String previousIp = device.getIp();
         String previousUsername = device.getUsername();
         String previousPassword = device.getPassword();
         boolean wasEnabled = device.isEnabled();
+        if (request.anpr() != null && request.anpr() != device.isAnpr()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Device type cannot be changed");
+        }
         applyUpsert(device, request, false);
         boolean connectionChanged = !Objects.equals(previousIp, device.getIp())
                 || !Objects.equals(previousUsername, device.getUsername())
                 || !Objects.equals(previousPassword, device.getPassword());
+        if (connectionChanged) {
+            requireDistinctCameraEndpoint(device);
+            requireOnline(device);
+        }
         DeviceEntity saved = deviceRepository.save(device);
         if (connectionChanged) {
-            deviceCursorService.markOffline(saved.getId());
+            deviceCursorService.markOnline(saved.getId());
         }
         if (saved.isEnabled()) {
             if (wasEnabled && connectionChanged) {
@@ -193,7 +206,8 @@ public class DeviceController {
         log.info("ActionLog.device.status.check.started deviceId={} ip={}", device.getId(), device.getIp());
         IsapiClient.DeviceStatusCheckResult status = isapiClient.checkDeviceStatus(device);
         if (status.online()) {
-            deviceCursorService.markOnline(device.getId());
+            if (device.isAnpr()) deviceCursorService.markCameraReachable(device.getId());
+            else deviceCursorService.markOnline(device.getId());
         } else {
             deviceCursorService.markOffline(device.getId());
         }
@@ -219,12 +233,40 @@ public class DeviceController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Device not found"));
     }
 
+    private void requireOnline(DeviceEntity device) {
+        IsapiClient.DeviceStatusCheckResult result = isapiClient.checkDeviceStatus(device);
+        if (result.online()) return;
+        String message = result.statusCode() == 401 || result.statusCode() == 403
+                ? "Cihaz giriş məlumatlarını qəbul etmədi"
+                : "Cihaza qoşulmaq mümkün olmadı və ya gözlənilən cihaz cavabı alınmadı";
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+    }
+
+    private void requireDistinctCameraEndpoint(DeviceEntity device) {
+        String endpoint = com.abv.hrerpisapi.device.DeviceAddress.normalize(device.getIp());
+        for (DeviceEntity existing : deviceRepository.findAll()) {
+            if (Objects.equals(existing.getId(), device.getId()) || (!device.isAnpr() && !existing.isAnpr())) continue;
+            String previous;
+            try {
+                previous = com.abv.hrerpisapi.device.DeviceAddress.normalize(existing.getIp());
+            } catch (IllegalArgumentException invalidLegacyAddress) {
+                continue;
+            }
+            if (endpoint.equals(previous)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ANPR camera endpoint is already registered");
+            }
+        }
+    }
+
     private void applyUpsert(DeviceEntity device, DeviceUpsertRequest request, boolean create) {
         device.setIp(requireNotBlank(request.ip(), "ip is required"));
         device.setUsername(requireNotBlank(request.username(), "username is required"));
         device.setName(trimToNull(request.name()));
         if (request.enabled() != null) {
             device.setEnabled(request.enabled());
+        }
+        if (request.anpr() != null) {
+            device.setAnpr(request.anpr());
         }
 
         String password = trimToNull(request.password());
@@ -272,7 +314,8 @@ public class DeviceController {
                 device.isEnabled(),
                 deviceWorkerService.isRunning(device.getId()),
                 device.isEnabled() && cursor != null && cursor.isOnline(),
-                cursorSyncTime(cursor));
+                cursorSyncTime(cursor),
+                device.isAnpr());
     }
 
     public record DeviceResponse(
@@ -283,7 +326,8 @@ public class DeviceController {
             boolean enabled,
             boolean running,
             boolean online,
-            OffsetDateTime lastSyncTime
+            OffsetDateTime lastSyncTime,
+            boolean anpr
     ) {
     }
 
@@ -292,8 +336,12 @@ public class DeviceController {
             String username,
             String password,
             String name,
-            Boolean enabled
+            Boolean enabled,
+            Boolean anpr
     ) {
+        public DeviceUpsertRequest(String ip, String username, String password, String name, Boolean enabled) {
+            this(ip, username, password, name, enabled, null);
+        }
     }
 
     public record DeviceEnabledRequest(boolean enabled) {

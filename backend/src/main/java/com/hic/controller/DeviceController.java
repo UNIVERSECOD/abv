@@ -9,6 +9,7 @@ import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.DeviceConfig;
 import com.hic.repository.DeviceConfigRepository;
 import com.hic.service.DeviceService;
+import com.hic.service.AnprAreaConfiguration;
 import com.hic.service.DeviceSyncService;
 import com.hic.service.DoorAttendanceSyncService;
 import com.hic.service.HikDeviceUserImportService;
@@ -17,6 +18,7 @@ import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,6 +37,8 @@ public class DeviceController {
     private final DoorAttendanceSyncService doorAttendanceSyncService;
     private final EncryptionUtil encryptionUtil;
     private final com.hic.repository.BranchRepository branchRepository;
+    private final com.hic.service.DeviceTargetPolicy targetPolicy;
+    private final AnprAreaConfiguration anprAreas;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<DeviceSyncDTO.DeviceConfigDTO>>> getAll() {
@@ -55,33 +59,57 @@ public class DeviceController {
     }
 
     @PostMapping("/sync")
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.SyncResultDTO>> syncFromIsapi() {
         return ResponseEntity.ok(ApiResponse.success(deviceService.syncFromIsapi()));
     }
 
     @PostMapping
+    @Transactional
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceConfigDTO>> create(
             @RequestBody DeviceSyncDTO.DeviceUpsertRequest req) {
         DeviceSyncDTO.DeviceConfigDTO dto = toConfigDTO(req);
+        if (Boolean.TRUE.equals(req.getAnpr())) lockDeviceTenant();
+        String role = Boolean.TRUE.equals(req.getAnpr())
+                ? anprAreas.validate(TenantContext.getTenantId(), req.getBranchId(), req.getDoorRole(), req.getIp(), null) : null;
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.createDevice(dto);
-        DeviceConfig backendDevice = upsertBackendDevice(isapiResult, req.getBranchId(), req.getPassword());
+        DeviceConfig backendDevice = upsertBackendDevice(isapiResult, req.getBranchId(), req.getPassword(), role);
+        reconcileAnprPair(backendDevice);
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(backendDevice.getId())));
     }
 
     @PutMapping("/{id}")
+    @Transactional
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceConfigDTO>> update(
             @PathVariable Long id,
             @RequestBody DeviceSyncDTO.DeviceUpsertRequest req) {
+        lockDeviceTenant();
         DeviceConfig backendDevice = requireOwnedDevice(id);
+        if (req.getAnpr() != null && req.getAnpr() != backendDevice.isAnpr()) {
+            throw new BadRequestException("Cihaz növü qeydiyyatdan sonra dəyişdirilə bilməz.");
+        }
+        if (req.getBranchId() == null) req.setBranchId(backendDevice.getBranchId());
         DeviceSyncDTO.DeviceConfigDTO dto = toConfigDTO(req);
+        String role = backendDevice.isAnpr() ? anprAreas.validate(backendDevice.getTenantId(),
+                req.getBranchId(), req.getDoorRole(), req.getIp(), backendDevice) : null;
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateDevice(
                 toIsapiId(backendDevice.getDeviceId()), dto);
         updateBackendDevice(backendDevice, isapiResult, req.getBranchId(), req.getPassword());
+        if (role != null && !role.equals(backendDevice.getDoorRole())) {
+            backendDevice.setDoorRole(role);
+            backendDevice.setAttendanceRoleSince(com.hic.util.AppTimeZone.now());
+        }
+        reconcileAnprPair(backendDevice);
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(id)));
     }
 
     @DeleteMapping("/{id}")
+    @Transactional
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
+        lockDeviceTenant();
         DeviceConfig backendDevice = requireOwnedDevice(id);
         try {
             deviceSyncService.deleteDevice(toIsapiId(backendDevice.getDeviceId()));
@@ -89,13 +117,17 @@ public class DeviceController {
             // ISAPI delete may fail if device already removed there; still remove backend record
         }
         deviceConfigRepository.deleteById(id);
+        reconcileAnprPair(backendDevice);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
     @PatchMapping("/{id}/enabled")
+    @Transactional
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceConfigDTO>> updateEnabled(
             @PathVariable Long id,
             @RequestBody DeviceSyncDTO.DeviceEnabledDTO dto) {
+        lockDeviceTenant();
         DeviceConfig backendDevice = requireOwnedDevice(id);
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateEnabled(
                 toIsapiId(backendDevice.getDeviceId()), dto);
@@ -103,10 +135,12 @@ public class DeviceController {
         backendDevice.setOnline(isapiResult.isOnline());
         updateLastSuccessfulSync(backendDevice, isapiResult.getLastSyncTime());
         deviceConfigRepository.save(backendDevice);
+        reconcileAnprPair(backendDevice);
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(id)));
     }
 
     @PostMapping("/{id}/start")
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceRuntimeDTO>> start(@PathVariable Long id) {
         DeviceConfig backendDevice = requireOwnedDevice(id);
         return ResponseEntity.ok(ApiResponse.success(
@@ -114,6 +148,7 @@ public class DeviceController {
     }
 
     @PostMapping("/{id}/stop")
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceRuntimeDTO>> stop(@PathVariable Long id) {
         DeviceConfig backendDevice = requireOwnedDevice(id);
         return ResponseEntity.ok(ApiResponse.success(
@@ -128,6 +163,7 @@ public class DeviceController {
     }
 
     @PostMapping("/{id}/sync")
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.SyncResultDTO>> sync(@PathVariable Long id) {
         DeviceConfig backendDevice = requireOwnedDevice(id);
         DeviceSyncDTO.SyncResultDTO result = deviceSyncService.syncDevice(toIsapiId(backendDevice.getDeviceId()));
@@ -139,6 +175,7 @@ public class DeviceController {
     }
 
     @PostMapping("/{deviceConfigId}/assign-door")
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<DeviceSyncDTO.DeviceConfigDTO>> assignDoor(
             @PathVariable Long deviceConfigId,
             @RequestBody DoorDTO.AssignDoorRequest dto) {
@@ -155,6 +192,7 @@ public class DeviceController {
      * <p>POST /api/devices/{id}/import-users
      */
     @PostMapping("/{id}/import-users")
+    @PreAuthorize("hasRole('HEAD_OFFICE_HR')")
     public ResponseEntity<ApiResponse<HikUserInfoSearchDTO.ImportResultDTO>> importUsers(
             @PathVariable Long id) {
         DeviceConfig backendDevice = requireOwnedDevice(id);
@@ -193,11 +231,13 @@ public class DeviceController {
                     .filter(branch -> branch.getTenantId().equals(TenantContext.getTenantId()))
                     .orElseThrow(() -> new ResourceNotFoundException("Branch", req.getBranchId()));
         }
+        targetPolicy.requireAllowed(req.getIp(), req.getBranchId());
         DeviceSyncDTO.DeviceConfigDTO dto = new DeviceSyncDTO.DeviceConfigDTO();
         dto.setDeviceIp(req.getIp());
         dto.setUsername(req.getUsername());
         dto.setPassword(req.getPassword());
         dto.setDeviceName(req.getName());
+        dto.setAnpr(req.getAnpr());
         if (req.getEnabled() != null) {
             dto.setStatus(req.getEnabled() ? "ACTIVE" : "INACTIVE");
         }
@@ -207,8 +247,18 @@ public class DeviceController {
     private DeviceConfig upsertBackendDevice(
             DeviceSyncDTO.DeviceConfigDTO isapiResult,
             Long branchId,
-            String password) {
+            String password,
+            String anprRole) {
         DeviceConfig device = deviceConfigRepository.findByDeviceId(isapiResult.getDeviceId()).orElse(new DeviceConfig());
+        if (anprRole != null) {
+            if (!Boolean.TRUE.equals(isapiResult.getAnpr())) {
+                throw new BadRequestException("ISAPI xidməti ANPR kamera rejimini təsdiqləmədi.");
+            }
+            if (device.getId() != null) throw new BadRequestException("Bu kamera artıq qeydiyyatdadır.");
+            device.setAnpr(true);
+            device.setDoorRole(anprRole);
+            device.setAttendanceRoleSince(com.hic.util.AppTimeZone.now());
+        }
         device.setDeviceId(isapiResult.getDeviceId());
         device.setDeviceName(isapiResult.getDeviceName());
         device.setDeviceIp(isapiResult.getDeviceIp());
@@ -263,6 +313,17 @@ public class DeviceController {
             return Long.valueOf(deviceId);
         } catch (NumberFormatException e) {
             throw new BadRequestException("Invalid deviceId format: " + deviceId);
+        }
+    }
+
+    private void lockDeviceTenant() {
+        Long tenant = TenantContext.getTenantId();
+        if (tenant != null) anprAreas.lockTenant(tenant);
+    }
+
+    private void reconcileAnprPair(DeviceConfig device) {
+        if (device.isAnpr() && device.getBranchId() != null) {
+            anprAreas.reconcilePair(device.getTenantId(), device.getBranchId());
         }
     }
 

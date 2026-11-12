@@ -37,12 +37,23 @@ public class AttendanceSessionPolicy {
         if (calendarDeadline != null) {
             return !now.isBefore(calendarDeadline);
         }
+        if (session.getAnprWorkDate() != null) {
+            return !now.isBefore(managedDeadline(employee, session));
+        }
         if (ShiftTypes.isFlexible(session.getShiftType())) {
             return !now.isBefore(checkIn.plusHours(FLEXIBLE_MAX_SESSION_HOURS));
         }
         LocalDate workDate = checkIn.toLocalDate();
         AttendanceScheduleResolver.DaySchedule schedule = scheduleResolver.resolve(employee, workDate);
         return isExpired(checkIn, schedule, now);
+    }
+
+    LocalDateTime managedDeadline(Employee employee, AttendanceLog session) {
+        if (session.getAnprDeadline() != null) return session.getAnprDeadline();
+        LocalDate day = session.getAnprWorkDate();
+        var schedule = scheduleResolver.resolve(employee, day);
+        var next = AnprAttendanceService.overnight(schedule) ? scheduleResolver.resolve(employee, day.plusDays(1)) : null;
+        return AnprAttendanceService.deadline(day, schedule, next);
     }
 
     static boolean isExpired(
@@ -73,6 +84,7 @@ public class AttendanceSessionPolicy {
     }
 
     static LocalDateTime calendarDayDeadline(AttendanceLog session) {
+        if (session != null && session.getAnprDeadline() != null) return session.getAnprDeadline();
         return session != null && session.getCombinedWorkDate() != null
                 ? session.getCombinedWorkDate().plusDays(1).atStartOfDay() : null;
     }

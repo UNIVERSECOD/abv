@@ -3,10 +3,13 @@ import Layout from '../components/Layout.tsx'
 import EmployeeDetailModal from '../components/EmployeeDetailModal.tsx'
 import EmployeeAvatar from '../components/EmployeeAvatar.tsx'
 import EmployeePhotoCapture from '../components/EmployeePhotoCapture.tsx'
+import EmployeeVehiclePanel from '../components/EmployeeVehiclePanel.tsx'
+import VehicleCameraTransferDialog from '../components/VehicleCameraTransferDialog.tsx'
 import DataTransferControls from '../components/DataTransferControls.tsx'
 import PaginationBar from '../components/PaginationBar.tsx'
 import { useEmployeeStore } from '../store/employeeStore.ts'
 import { useBranchStore } from '../store/branchStore.ts'
+import { useAuthStore } from '../store/authStore'
 import { Department, Employee, Position, Timetable } from '../types'
 import { employeeApi } from '../api/employeeApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
@@ -14,6 +17,7 @@ import { positionApi } from '../api/positionApi.ts'
 import { deviceApi } from '../api/deviceApi.ts'
 import { deviceUserApi } from '../api/deviceUserApi.ts'
 import { timetableApi } from '../api/timetableApi.ts'
+import { transportApi, type VehiclePlate } from '../api/transportApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { todayInAppTimeZone } from '../utils/dateTime.ts'
 import { validateFaceImageSize } from '../utils/faceImage.ts'
@@ -34,6 +38,7 @@ const SHIFT_TYPE_LABELS: Record<string, string> = {
 
 interface EmployeeFormData {
   deviceEmployeeNo: string
+  vehiclePlate: string
   firstName: string
   lastName: string
   fatherName: string
@@ -82,6 +87,7 @@ const extractStatusCode = (value: unknown): number | undefined => {
 
 const defaultForm: EmployeeFormData = {
   deviceEmployeeNo: '',
+  vehiclePlate: '',
   firstName: '',
   lastName: '',
   fatherName: '',
@@ -168,6 +174,7 @@ export default function EmployeesPage() {
   const defaultDeviceId = Number(import.meta.env.VITE_DEFAULT_DEVICE_ID || 1)
   const { employees, loading, error, fetchEmployees, terminateEmployee, totalPages, currentPage, totalElements } = useEmployeeStore()
   const { branches, fetchBranches } = useBranchStore()
+  const canManageVehicles = useAuthStore(state => state.user?.userType === 'HEAD_OFFICE_HR')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [departments, setDepartments] = useState<Department[]>([])
@@ -179,6 +186,8 @@ export default function EmployeesPage() {
   const [filterShift, setFilterShift] = useState<string>('')
   const [filterBranch, setFilterBranch] = useState<string>('')
   const [showWizard, setShowWizard] = useState(false)
+  const [offerCameraTransfer, setOfferCameraTransfer] = useState(false)
+  const [vehicleTransfer, setVehicleTransfer] = useState<{ employeeId: number; vehicle: VehiclePlate }>()
   const [currentStep, setCurrentStep] = useState(1)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [form, setForm] = useState<EmployeeFormData>(defaultForm)
@@ -304,6 +313,7 @@ export default function EmployeesPage() {
   }
 
   const openCreate = () => {
+    setOfferCameraTransfer(false)
     wizardImageLoadTokenRef.current += 1
     if (wizardImageObjectUrlRef.current) {
       URL.revokeObjectURL(wizardImageObjectUrlRef.current)
@@ -327,6 +337,7 @@ export default function EmployeesPage() {
     setEditingEmployee(emp)
     setForm({
       deviceEmployeeNo: emp.deviceEmployeeNo || emp.employeeId || '',
+      vehiclePlate: '',
       firstName: emp.firstName,
       lastName: emp.lastName,
       fatherName: emp.fatherName || '',
@@ -500,6 +511,12 @@ export default function EmployeesPage() {
       if (!form.finNumber.trim()) errors.finNumber = 'FIN daxil edilməlidir.'
       if (!form.firstName.trim()) errors.firstName = 'Ad daxil edilməlidir.'
       if (!form.lastName.trim()) errors.lastName = 'Soyad daxil edilməlidir.'
+      if (canManageVehicles && !editingEmployee && form.vehiclePlate.trim()) {
+        const plate = form.vehiclePlate.toUpperCase().replace(/[\s-]/g, '')
+        if (!/^[A-Z0-9]{2,32}$/.test(plate) || /^(UNKNOWN|NOPLATE|X+)$/.test(plate)) {
+          errors.vehiclePlate = 'Avtomobil nömrəsini yoxlayın.'
+        }
+      }
     }
 
     if (step === 2) {
@@ -644,6 +661,18 @@ export default function EmployeesPage() {
         savedEmployee = res.data?.data
       }
 
+      let vehicleSaveFailed = false
+      let savedVehicle: VehiclePlate | undefined
+      if (!editingEmployee && savedEmployee && canManageVehicles && form.vehiclePlate.trim()) {
+        try {
+          savedVehicle = (await transportApi.addVehicle(savedEmployee.id, form.vehiclePlate)).data.data
+        } catch (reason) {
+          vehicleSaveFailed = true
+          toast.warning('Əməkdaş əlavə edildi, nömrə saxlanılmadı',
+            getApiErrorMessage(reason, 'Nömrəni redaktə bölməsindən əlavə edə bilərsiniz.'))
+        }
+      }
+
       if (savedEmployee && (wizardImageFile || wizardImageRemovalRequested)) {
         try {
           const freshRes = await employeeApi.getById(savedEmployee.id)
@@ -704,7 +733,10 @@ export default function EmployeesPage() {
         return
       }
       closeWizard()
-      toast.success(
+      if (offerCameraTransfer && savedEmployee && savedVehicle) {
+        setVehicleTransfer({ employeeId: savedEmployee.id, vehicle: savedVehicle })
+      }
+      if (!vehicleSaveFailed) toast.success(
         editingEmployee ? 'Əməkdaş yeniləndi' : 'Əməkdaş əlavə edildi',
         wizardImageFile
           ? 'Profil şəkli saxlanıldı. Cihaza göndərilərkən avtomatik uyğunlaşdırılır.'
@@ -1344,6 +1376,41 @@ export default function EmployeesPage() {
                   <label className="block text-xs font-semibold text-gray-500 mb-1">ƏLAVƏ QEYDLƏR</label>
                   <textarea value={form.notes} onChange={(e) => setFormField('notes', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm h-24 resize-none" />
                 </div>
+                {canManageVehicles && editingEmployee?.employmentStatus !== 'TERMINATED' && (
+                  <div className="md:col-span-2 rounded-xl border border-slate-200">
+                    {editingEmployee ? (
+                      <EmployeeVehiclePanel key={editingEmployee.id} employeeId={editingEmployee.id} />
+                    ) : (
+                      <section aria-labelledby="new-employee-vehicle-title" className="p-5">
+                        <h3 id="new-employee-vehicle-title" className="mb-3 text-lg font-semibold text-[#1f2d6b]">
+                          Avtomobil məlumatları
+                        </h3>
+                        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+                          <div className="w-full max-w-xs">
+                            <label htmlFor="new-employee-plate" className="block text-sm font-medium text-slate-700">
+                              Avtomobil nömrəsi
+                            </label>
+                            <input id="new-employee-plate" value={form.vehiclePlate}
+                              onChange={e => {
+                                setFormField('vehiclePlate', e.target.value)
+                                if (!e.target.value.trim()) setOfferCameraTransfer(false)
+                              }} maxLength={32}
+                              placeholder="10-AB-123" aria-invalid={Boolean(fieldErrors.vehiclePlate)}
+                              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase" />
+                          </div>
+                          <label className="inline-flex items-center gap-2 py-2 text-sm font-medium text-violet-800">
+                            <input type="checkbox" className="accent-violet-700" disabled={!form.vehiclePlate.trim()}
+                              checked={offerCameraTransfer} onChange={e => setOfferCameraTransfer(e.target.checked)} />
+                            Saxladıqdan sonra kamera seç
+                          </label>
+                        </div>
+                        {fieldErrors.vehiclePlate
+                          ? <p role="alert" className="mt-1 text-xs text-red-600">{fieldErrors.vehiclePlate}</p>
+                          : <p className="mt-1 text-xs text-slate-500">İstəyə bağlıdır. Əməkdaşla birlikdə Attendra-da saxlanılır.</p>}
+                      </section>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1567,6 +1634,9 @@ export default function EmployeesPage() {
           onEdit={(emp) => { closeProfile(); openEdit(emp) }}
         />
       )}
+
+      {vehicleTransfer && <VehicleCameraTransferDialog employeeId={vehicleTransfer.employeeId}
+        vehicle={vehicleTransfer.vehicle} onClose={() => setVehicleTransfer(undefined)} />}
 
       {/* Delete Confirmation */}
       {deleteConfirm && (

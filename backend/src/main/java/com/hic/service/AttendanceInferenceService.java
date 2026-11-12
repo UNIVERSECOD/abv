@@ -35,9 +35,8 @@ public class AttendanceInferenceService {
             return new AttendanceInference(null, null, 0, false, List.of());
         }
         LocalDate day = logs.stream()
-                .map(AttendanceLog::getCheckInTime)
+                .map(AttendanceDayAllocation::workDate)
                 .filter(Objects::nonNull)
-                .map(LocalDateTime::toLocalDate)
                 .min(LocalDate::compareTo)
                 .orElse(LocalDate.now());
         return inferDay(logs, day);
@@ -60,7 +59,7 @@ public class AttendanceInferenceService {
 
         for (AttendanceLog log : ordered) {
             LocalDateTime entry = log.getCheckInTime();
-            if (entry == null || !entry.toLocalDate().equals(day)) {
+            if (!belongsToWorkDate(log, day)) {
                 continue;
             }
             LocalDateTime exit = log.getCheckOutTime();
@@ -136,7 +135,7 @@ public class AttendanceInferenceService {
         return log != null
                 && workDate != null
                 && log.getCheckInTime() != null
-                && log.getCheckInTime().toLocalDate().equals(workDate);
+                && workDate.equals(AttendanceDayAllocation.workDate(log));
     }
 
     /** Backward-compatible name for callers while preserving work-date semantics. */
@@ -167,8 +166,10 @@ public class AttendanceInferenceService {
             boolean sameEnd = previous.getCheckOutTime() != null && log.getCheckOutTime() != null
                     && Duration.between(previous.getCheckOutTime(), log.getCheckOutTime()).abs()
                     .compareTo(DUPLICATE_PUNCH_WINDOW) <= 0;
-            boolean sameCombinedArea = java.util.Objects.equals(previous.getCombinedAreaId(), log.getCombinedAreaId());
-            if (sameCombinedArea && sameStart && (sameEnd || previous.getCheckOutTime() == null || log.getCheckOutTime() == null)) {
+            boolean sameScope = Objects.equals(previous.getCombinedAreaId(), log.getCombinedAreaId())
+                    && Objects.equals(previous.getAnprAreaId(), log.getAnprAreaId())
+                    && Objects.equals(previous.getAnprWorkDate(), log.getAnprWorkDate());
+            if (sameScope && sameStart && (sameEnd || previous.getCheckOutTime() == null || log.getCheckOutTime() == null)) {
                 // Prefer the longer / more complete session
                 if (previous.getCheckOutTime() == null && log.getCheckOutTime() != null) {
                     deduped.set(deduped.size() - 1, log);

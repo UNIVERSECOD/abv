@@ -65,6 +65,7 @@ export const az = {
     navAttendance: 'Əməkdaş davamiyyəti',
     navOpenSessions: 'Açıq sessiyalar',
     navReports: 'Davamiyyət hesabatları',
+    navTransportReport: 'Nəqliyyat hesabatı',
     navTabel: 'Tabel',
     navWorkSchedule: 'İş qrafiki',
     navPermissions: 'İcazə / Məzuniyyət',
@@ -191,7 +192,7 @@ export const az = {
     currentSession: 'Cari sessiya',
     currentSessionDesc: 'Hazırda aktiv · Bu cihaz',
     tokenExpiration: 'Giriş nişanının müddəti',
-    tokenExpirationDesc: '24 saat (server tərəfində tənzimlənib)',
+    tokenExpirationDesc: 'Standart 30 dəqiqə (server tərəfində tənzimlənir)',
   },
   accessLogs: {
     title: 'Keçid jurnalı',

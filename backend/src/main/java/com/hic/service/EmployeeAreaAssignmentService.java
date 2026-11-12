@@ -158,7 +158,7 @@ public class EmployeeAreaAssignmentService {
 
     @Transactional
     public List<Long> reconcileDeviceAreaAccess(DeviceConfig device) {
-        if (device == null || device.getId() == null) {
+        if (device == null || device.getId() == null || device.isAnpr()) {
             return List.of();
         }
 
@@ -279,6 +279,7 @@ public class EmployeeAreaAssignmentService {
                     ? deviceConfigRepository.findByTenantIdAndBranchId(employee.getTenantId(), areaId)
                     : deviceConfigRepository.findByBranchId(areaId);
             devices.stream()
+                    .filter(device -> !device.isAnpr())
                     .filter(device -> sameTenant(employee.getTenantId(), device.getTenantId()))
                     .forEach(device -> expectedDeviceArea.put(device.getId(), areaId));
         }

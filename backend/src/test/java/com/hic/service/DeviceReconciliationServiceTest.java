@@ -36,7 +36,7 @@ class DeviceReconciliationServiceTest {
         lenient().when(employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(1L)).thenReturn(all);
         lenient().when(areas.findByBranchId(2L)).thenReturn(members);
         lenient().when(access.findByDeviceConfigId(5L)).thenReturn(manual);
-        lenient().when(client.device(900L)).thenReturn(new IsapiDeviceResponse(900L, "127.0.0.25", "mock", "Mock entry", true, true, true, null));
+        lenient().when(client.device(900L)).thenReturn(new IsapiDeviceResponse(900L, "127.0.0.25", "mock", "Mock entry", true, true, true, null, false));
         lenient().when(client.status(900L)).thenReturn(new DeviceStatusDTO(900L, true, 200, null));
         lenient().when(client.snapshot(900L)).thenAnswer(i -> physical.stream().sorted(Comparator.comparing(DeviceReconciliationClient.Person::employeeNo)).toList());
     }

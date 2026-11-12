@@ -46,6 +46,7 @@ public class DoorAttendanceSyncService {
     private final EmployeeShiftResolver employeeShiftResolver;
     private final AttendanceSessionPolicy attendanceSessionPolicy;
     private final CombinedDeviceAttendanceService combinedDeviceAttendanceService;
+    private final AnprAttendanceService anprAttendance;
 
     /** Serializes sync per tenant so UI + scheduler cannot create duplicate sessions. */
     private final ConcurrentHashMap<Long, Object> tenantSyncLocks = new ConcurrentHashMap<>();
@@ -110,6 +111,13 @@ public class DoorAttendanceSyncService {
         List<DeviceConfig> devices = tenantId != null
                 ? deviceConfigRepository.findByTenantId(tenantId)
                 : deviceConfigRepository.findAll();
+        boolean hasAnpr = tenantId != null && devices.stream().anyMatch(DeviceConfig::isAnpr);
+        Map<Long, List<AnprAreaConfiguration.Period>> anprAreas = tenantId != null
+                ? anprAttendance.enabledAreas(tenantId) : Map.of();
+        if (hasAnpr || !anprAreas.isEmpty()) anprAttendance.lockTenant(tenantId);
+        Set<AnprAttendanceService.WorkDay> changedAnprDays = new HashSet<>();
+        int cameraReads = 0;
+        int skippedCameraReads = 0;
 
         List<DeviceConfig> activeDevicesWithRoles = devices.stream()
                 .filter(d -> "ACTIVE".equalsIgnoreCase(d.getStatus()))
@@ -128,11 +136,29 @@ public class DoorAttendanceSyncService {
                 log.warn("Skipping device config id={} — missing/invalid ISAPI deviceId={}", device.getId(), device.getDeviceId());
                 continue;
             }
+            if (device.isAnpr()) {
+                if (tenantId != null) {
+                    var count = anprAttendance.captureCamera(tenantId, device, isapiDeviceId,
+                            anprAreas.getOrDefault(device.getBranchId(), List.of()), rangeStart(start), rangeEnd(end), changedAnprDays);
+                    cameraReads += count.read();
+                    skippedCameraReads += count.skipped();
+                }
+                continue;
+            }
             deviceRolesByIsapiId.put(isapiDeviceId, device.getDoorRole());
             backendIdByIsapiId.put(isapiDeviceId, device.getId());
             areaByIsapiId.put(isapiDeviceId, device.getBranchId());
-            allPunches.addAll(fetchPunchesInRange(isapiDeviceId, start, end, effectiveLimit)
+            List<AttendanceLogSyncDTO.AttendanceLogEntryDTO> terminalPunches;
+            try {
+                terminalPunches = fetchPunchesInRange(isapiDeviceId, start, end, effectiveLimit);
+            } catch (com.hic.exception.DeviceSyncException | com.hic.exception.UpstreamApiException exception) {
+                if (anprAreas.isEmpty()) throw exception;
+                log.warn("Could not read terminal punches from bridge device {}", isapiDeviceId);
+                continue;
+            }
+            allPunches.addAll(terminalPunches
                     .stream()
+                    .filter(p -> isapiDeviceId.equals(p.getDeviceId()))
                     .filter(p -> p.getPunchTime() != null && p.getEmployeeNo() != null)
                     .filter(p -> (includeEventsBeforeRoleAssignment
                             && "BOTH".equalsIgnoreCase(device.getDoorRole()))
@@ -192,6 +218,12 @@ public class DoorAttendanceSyncService {
             for (AttendanceLogSyncDTO.AttendanceLogEntryDTO punch : employeePunches) {
                 LocalDateTime punchTime = toLocalDateTime(punch.getPunchTime());
                 String role = deviceRolesByIsapiId.get(punch.getDeviceId());
+                Long punchArea = areaByIsapiId.get(punch.getDeviceId());
+                if (tenantId != null && punchArea != null && anprAreas.containsKey(punchArea)
+                        && anprAttendance.captureTerminal(tenantId, employee, punchArea,
+                                anprAreas.get(punchArea), role, punch, changedAnprDays)) {
+                    continue;
+                }
 
                 if ("BOTH".equalsIgnoreCase(role)) {
                     var result = combinedDeviceAttendanceService.accept(
@@ -235,6 +267,7 @@ public class DoorAttendanceSyncService {
                             // Keep the original calculation basis, but show the latest scan in reports.
                             if (openLog.getLastEntryTime() == null || punchTime.isAfter(openLog.getLastEntryTime())) {
                                 openLog.setLastEntryTime(punchTime);
+                                openLog.setLastEntryMethod(punch.getVerificationMethod());
                                 attendanceLogRepository.save(openLog);
                             }
                             continue;
@@ -255,7 +288,8 @@ public class DoorAttendanceSyncService {
                             employee,
                             punchTime,
                             punch.getDeviceId(),
-                            punch.getId()
+                            punch.getId(),
+                            punch.getVerificationMethod()
                     );
                     if (created != null) {
                         createdLogs++;
@@ -302,6 +336,7 @@ public class DoorAttendanceSyncService {
                         if (openLog.getCheckOutTime() == null) {
                             openLog.setCheckOutTime(punchTime);
                             openLog.setExitPunchId(punch.getId());
+                            openLog.setExitMethod(punch.getVerificationMethod());
                             openLog.setDoorId(doorId);
                             openLog.setStatus("CLOSED");
                             attendanceLogRepository.save(openLog);
@@ -321,6 +356,14 @@ public class DoorAttendanceSyncService {
             }
         }
 
+        for (var day : changedAnprDays) {
+            AttendanceLog projected = anprAttendance.project(tenantId, day);
+            if (projected == null) continue;
+            createdLogs++;
+            if (projected.getCheckOutTime() != null) matchedSessions++;
+            recalcDatesByEmployee.computeIfAbsent(day.employee(), ignored -> new HashSet<>())
+                    .addAll(AttendanceDayAllocation.affectedDates(projected, projected.getShiftType()));
+        }
         refreshOpenSessionStatuses(tenantId, recalcDatesByEmployee);
 
         int recalculatedDays = 0;
@@ -340,11 +383,11 @@ public class DoorAttendanceSyncService {
         }
 
         return new DoorAttendanceSyncResultDTO(
-                allPunches.size(),
+                allPunches.size() + cameraReads,
                 matchedSessions,
                 createdLogs,
                 skippedEmployees,
-                skippedPunches,
+                skippedPunches + skippedCameraReads,
                 recalculatedDays,
                 unresolvedEmployeeNos.stream().sorted().toList()
         );
@@ -359,7 +402,8 @@ public class DoorAttendanceSyncService {
             Employee employee,
             LocalDateTime entryTime,
             Long entryDeviceId,
-            Long entryPunchId
+            Long entryPunchId,
+            String entryMethod
     ) {
         if (tenantId != null && entryPunchId != null
                 && attendanceLogRepository.findByTenantIdAndEntryPunchId(tenantId, entryPunchId).isPresent()) {
@@ -378,6 +422,7 @@ public class DoorAttendanceSyncService {
         logEntry.setCheckInTime(entryTime);
         logEntry.setCheckOutTime(null);
         logEntry.setEntryPunchId(entryPunchId);
+        logEntry.setEntryMethod(entryMethod);
         logEntry.setDoorId(entryDeviceId != null ? entryDeviceId + ":null" : null);
         logEntry.setDeviceId(entryDeviceId != null ? String.valueOf(entryDeviceId) : null);
         logEntry.setEventType("DOOR_SESSION");
@@ -415,11 +460,16 @@ public class DoorAttendanceSyncService {
                 continue;
             }
             String effectiveStatus = attendanceSessionPolicy.effectiveStatus(employee, open);
-            if (!effectiveStatus.equalsIgnoreCase(open.getStatus() == null ? "" : open.getStatus())) {
-                open.setStatus(effectiveStatus);
-                attendanceLogRepository.save(open);
-                addRecalcDate(recalcDatesByEmployee, employee.getId(),
-                        open.getCheckInTime() != null ? open.getCheckInTime().toLocalDate() : null);
+            if (!effectiveStatus.equalsIgnoreCase(open.getStatus() == null ? "" : open.getStatus())
+                    || open.getAnprWorkDate() != null && open.getAnprDeadline() == null) {
+                if (open.getAnprWorkDate() != null) {
+                    if (attendanceLogRepository.updateOpenAnprStatus(tenantId, open.getId(),
+                            open.getCheckInTime(), effectiveStatus, attendanceSessionPolicy.managedDeadline(employee, open)) == 0) continue;
+                } else {
+                    open.setStatus(effectiveStatus);
+                    attendanceLogRepository.save(open);
+                }
+                addRecalcDate(recalcDatesByEmployee, employee.getId(), AttendanceDayAllocation.workDate(open));
             }
         }
     }
@@ -446,12 +496,8 @@ public class DoorAttendanceSyncService {
             int pageSize
     ) {
         List<AttendanceLogSyncDTO.AttendanceLogEntryDTO> punches = new ArrayList<>();
-        OffsetDateTime rangeStart = start == null
-                ? AppTimeZone.nowOffset().minusDays(7)
-                : start.atZone(AppTimeZone.ZONE).toOffsetDateTime();
-        OffsetDateTime rangeEnd = end == null
-                ? AppTimeZone.nowOffset()
-                : end.atZone(AppTimeZone.ZONE).toOffsetDateTime();
+        OffsetDateTime rangeStart = rangeStart(start);
+        OffsetDateTime rangeEnd = rangeEnd(end);
 
         int page = 0;
         while (true) {
@@ -477,6 +523,15 @@ public class DoorAttendanceSyncService {
 
     private LocalDateTime toLocalDateTime(OffsetDateTime time) {
         return AppTimeZone.toLocalDateTime(time);
+    }
+
+    private OffsetDateTime rangeStart(LocalDateTime start) {
+        return start == null ? AppTimeZone.nowOffset().minusDays(7)
+                : start.atZone(AppTimeZone.ZONE).toOffsetDateTime();
+    }
+
+    private OffsetDateTime rangeEnd(LocalDateTime end) {
+        return end == null ? AppTimeZone.nowOffset() : end.atZone(AppTimeZone.ZONE).toOffsetDateTime();
     }
 
     private Employee resolveEmployee(Long tenantId, Long deviceConfigId, String employeeCode) {

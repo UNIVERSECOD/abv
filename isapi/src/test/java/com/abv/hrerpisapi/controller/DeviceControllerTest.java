@@ -27,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class DeviceControllerTest {
+    @Mock
+    private com.abv.hrerpisapi.device.DeviceTargetPolicy targetPolicy;
 
     @Mock
     private DeviceRepository deviceRepository;
@@ -175,6 +177,8 @@ class DeviceControllerTest {
 
     @Test
     void updatePassword_restartsWorkerWithNewCredential() {
+        when(isapiClient.checkDeviceStatus(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new IsapiClient.DeviceStatusCheckResult(true, 200, "device"));
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
         when(deviceRepository.save(device)).thenReturn(device);
@@ -183,13 +187,15 @@ class DeviceControllerTest {
                 "192.168.1.10", "admin", "new-secret", "Front Door", true));
 
         assertThat(device.getPassword()).isEqualTo("new-secret");
-        verify(deviceCursorService).markOffline(1L);
+        verify(deviceCursorService).markOnline(1L);
         verify(deviceWorkerService).restartDevice(device);
         verify(deviceWorkerService, never()).startDevice(device);
     }
 
     @Test
-    void updateIp_marksDeviceOfflineAndRestartsWorker() {
+    void updateIp_marksVerifiedDeviceOnlineAndRestartsWorker() {
+        when(isapiClient.checkDeviceStatus(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new IsapiClient.DeviceStatusCheckResult(true, 200, "device"));
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
         when(deviceRepository.save(device)).thenReturn(device);
@@ -197,7 +203,7 @@ class DeviceControllerTest {
         controller.update(1L, new DeviceController.DeviceUpsertRequest(
                 "192.168.1.99", "admin", "", "Front Door", true));
 
-        verify(deviceCursorService).markOffline(1L);
+        verify(deviceCursorService).markOnline(1L);
         verify(deviceWorkerService).restartDevice(device);
         verify(deviceWorkerService, never()).startDevice(device);
     }
@@ -211,5 +217,41 @@ class DeviceControllerTest {
         device.setName("Front Door");
         device.setEnabled(true);
         return device;
+    }
+
+    @Test
+    void createRejectsWrongPasswordBeforeSavingOrStartingWorker() {
+        when(isapiClient.checkDeviceStatus(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new IsapiClient.DeviceStatusCheckResult(false, 401, "unauthorized"));
+        assertThatThrownBy(() -> controller.create(new DeviceController.DeviceUpsertRequest(
+                "10.0.0.5", "admin", "test-only", "Terminal", true)))
+                .isInstanceOf(ResponseStatusException.class).hasMessageContaining("giriş məlumatlarını");
+        verify(deviceRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+        org.mockito.Mockito.verifyNoInteractions(deviceWorkerService, deviceCursorService);
+    }
+
+    @Test
+    void createRejectsForbiddenEndpointBeforeNetworkCall() {
+        org.mockito.Mockito.doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST))
+                .when(targetPolicy).requireAllowed("169.254.169.254");
+        assertThatThrownBy(() -> controller.create(new DeviceController.DeviceUpsertRequest(
+                "169.254.169.254", "admin", "test-only", "Terminal", true)))
+                .isInstanceOf(ResponseStatusException.class);
+        org.mockito.Mockito.verifyNoInteractions(isapiClient, deviceRepository, deviceWorkerService);
+    }
+
+    @Test
+    void createVerifiedDeviceIsImmediatelyOnline() {
+        when(isapiClient.checkDeviceStatus(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new IsapiClient.DeviceStatusCheckResult(true, 200, "device-info"));
+        when(deviceRepository.save(org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
+            DeviceEntity device = invocation.getArgument(0); device.setId(9L); return device;
+        });
+        DeviceCursorEntity cursor = new DeviceCursorEntity(); cursor.setDeviceId(9L); cursor.setOnline(true);
+        when(deviceCursorService.markOnline(9L)).thenReturn(cursor);
+        var response = controller.create(new DeviceController.DeviceUpsertRequest(
+                "10.0.0.5", "admin", "test-only", "Terminal", true));
+        assertThat(response.online()).isTrue();
+        verify(deviceWorkerService).startDevice(org.mockito.ArgumentMatchers.any());
     }
 }

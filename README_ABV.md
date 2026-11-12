@@ -30,6 +30,14 @@ SERVER_IP yerinə serverin IP ünvanını yazın. Brauzerdə həmin ünvanı aç
 
 Compose layihəsi `abv` adlanır və ayrıca volume-lar yaradır. Mövcud Attendra ilə eyni serverdə portlar toqquşa bilər; bu təlimat yeni server üçündür. Bu nüsxə müştəri məlumatlarını və real .env-ni daşımır. Windows backup worker Ubuntu-da işləmir; server üçün ayrıca backup qurulmalıdır.
 
+## ANPR kameraları
+
+Kameranı Cihazlar səhifəsində ANPR növü ilə qeydiyyatdan keçirin. Davamiyyət üçün eyni ərazidə aktiv Giriş və Çıxış kamerası seçilir. Əməkdaşın avtomobil nömrələrini profilindən idarə etmək, keçidləri isə Nəqliyyat hesabatında görmək olur.
+
+Hostun mövcud .env faylına cihaz ünvanlarını əlavə edin. Backend qaydası üçün `DEVICES_ALLOWED_TARGETS=1/2=192.0.2.10:80;1/2=192.0.2.11:80` nümunəsində 1 şirkət, 2 isə ərazi ID-sidir. ISAPI qaydasında kamera ünvanlarını və istifadə olunan mövcud terminalları vergüllə yazın, məsələn `ISAPI_ALLOWED_TARGETS=192.0.2.10:80,192.0.2.11:80`. Backend-dən qeydiyyat və birbaşa terminal idxalı üçün istifadə edilən ünvanlar da uyğun şirkət/ərazi qaydasına daxil edilməlidir. Boş konfiqurasiya mövcud qeydiyyatlı cihazlara giriş imkanı verir.
+
+ISAPI ilk işə düşəndə əvvəlki cihaz şifrələrini mövcud qeydlərində şifrələyir. `runtime/isapi/device-credential-key` faylını bazadan ayrıca, məhdud girişlə saxlayın. Şifrələnmiş ISAPI bazasını bərpa edərkən eyni açar faylı tələb olunur. Konteyneri yeniləyəndə `runtime/isapi` qovluğunu qoruyun.
+
 ## Yeniləmə
 
 Əvvəl hər iki PostgreSQL bazasını, şəkilləri və .env-ni qorunan yerdə backup edin. Eyni qovluğu, .env-ni və abv Compose layihə adını saxlayın.

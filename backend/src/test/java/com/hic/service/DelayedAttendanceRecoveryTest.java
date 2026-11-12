@@ -27,7 +27,7 @@ class DelayedAttendanceRecoveryTest {
     @BeforeEach void setup() {
         TenantContext.setTenantId(1L);
         service = new DoorAttendanceSyncService(source, logs, employees, devices, calculations, summaries,
-                shifts, policy, mock(CombinedDeviceAttendanceService.class));
+                shifts, policy, mock(CombinedDeviceAttendanceService.class), mock(AnprAttendanceService.class));
         var employee = new Employee(); employee.setId(5L); employee.setTenantId(1L); employee.setDeviceEmployeeNo("test-5");
         when(devices.findByTenantId(1L)).thenReturn(List.of(device(10L, "101", "ENTRY"), device(11L, "102", "EXIT")));
         when(employees.findByDeviceAccessAndDeviceEmployeeNo(anyLong(), eq("test-5"))).thenReturn(List.of(employee));

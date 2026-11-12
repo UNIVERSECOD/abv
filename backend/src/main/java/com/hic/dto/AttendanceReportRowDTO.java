@@ -23,6 +23,8 @@ public class AttendanceReportRowDTO {
     /** Worked duration in minutes for the complete session/work date. */
     private Integer workedMinutes;
     private String verificationMethod;
+    private String entryMethod;
+    private String exitMethod;
     private String shiftType;
     private String status;
 }

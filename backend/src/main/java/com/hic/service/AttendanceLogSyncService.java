@@ -177,7 +177,7 @@ public class AttendanceLogSyncService {
                     String lastName = emp != null ? emp.getLastName() : null;
                     String deviceName = device != null ? device.getDeviceName() : null;
                     String doorRole = device != null ? device.getDoorRole() : null;
-                    return new AttendanceLogSyncDTO.AttendanceLogEntryDTO(
+                    var punch = new AttendanceLogSyncDTO.AttendanceLogEntryDTO(
                             response.getId(),
                             response.getDeviceId(),
                             response.getEmployeeNo(),
@@ -188,6 +188,8 @@ public class AttendanceLogSyncService {
                             deviceName,
                             doorRole
                     );
+                    punch.setVerificationMethod(response.getVerificationMethod());
+                    return punch;
                 })
                 .toList();
     }
@@ -304,5 +306,6 @@ public class AttendanceLogSyncService {
         private String employeeNo;
         private OffsetDateTime punchTime;
         private Long rawEventId;
+        private String verificationMethod;
     }
 }

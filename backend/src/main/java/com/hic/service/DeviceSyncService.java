@@ -133,6 +133,7 @@ public class DeviceSyncService {
     private DeviceSyncDTO.DeviceConfigDTO toConfigDTO(DeviceSyncDTO.IsapiDeviceResponse response) {
         log.info("ActionLog.toConfigDTO.start");
         DeviceSyncDTO.DeviceConfigDTO dto = new DeviceSyncDTO.DeviceConfigDTO();
+        dto.setAnpr(response.getAnpr());
         dto.setId(response.getId());
         dto.setDeviceId(String.valueOf(response.getId()));
         dto.setDeviceName(response.getName());
@@ -159,6 +160,7 @@ public class DeviceSyncService {
     private DeviceSyncDTO.IsapiDeviceUpsertRequest toIsapiUpsertRequest(DeviceSyncDTO.DeviceConfigDTO dto) {
         log.info("ActionLog.toIsapiUpsertRequest.start");
         DeviceSyncDTO.IsapiDeviceUpsertRequest request = new DeviceSyncDTO.IsapiDeviceUpsertRequest();
+        request.setAnpr(dto.getAnpr());
         request.setIp(dto.getDeviceIp());
         request.setUsername(dto.getUsername());
         request.setPassword(StringUtils.hasText(dto.getPassword()) ? dto.getPassword() : null);
@@ -237,6 +239,14 @@ public class DeviceSyncService {
         return result;
     }
 
+    private String safeUpstreamMessage(HttpStatusCodeException ex) {
+        try {
+            String message = new com.fasterxml.jackson.databind.ObjectMapper().readTree(ex.getResponseBodyAsString()).path("message").asText();
+            if (!message.isBlank() && message.length() <= 400) return message;
+        } catch (Exception ignored) { }
+        return "Cihaz xidməti sorğunu yerinə yetirə bilmədi (HTTP " + ex.getStatusCode().value() + ")";
+    }
+
     private void exchange(String url, HttpMethod method, Object body) {
         log.info("ActionLog.exchange.start");
         exchangeForObject(url, method, body, Void.class);
@@ -250,7 +260,7 @@ public class DeviceSyncService {
             ResponseEntity<T> response = restTemplate.exchange(url, method, entity, responseType);
             return response.getBody();
         } catch (HttpStatusCodeException ex) {
-            throw new UpstreamApiException(ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw new UpstreamApiException(ex.getStatusCode(), safeUpstreamMessage(ex));
         } catch (ResourceAccessException ex) {
             throw new DeviceSyncException("ISAPI service is unavailable");
         } finally {
@@ -270,7 +280,7 @@ public class DeviceSyncService {
             );
             return response.getBody() == null ? Collections.emptyList() : response.getBody();
         } catch (HttpStatusCodeException ex) {
-            throw new UpstreamApiException(ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw new UpstreamApiException(ex.getStatusCode(), safeUpstreamMessage(ex));
         } catch (ResourceAccessException ex) {
             throw new DeviceSyncException("ISAPI service is unavailable");
         } finally {

@@ -54,6 +54,7 @@ class HikDeviceUserImportServiceTest {
     @Mock private BranchRepository branchRepository;
     @Mock private TenantRepository tenantRepository;
     @Mock private EncryptionUtil encryptionUtil;
+    @Mock private DeviceTargetPolicy targetPolicy;
     @Mock private EmployeeFaceImageService employeeFaceImageService;
     @Mock private IsapiEmployeeUserSyncService isapiEmployeeUserSyncService;
 
@@ -70,6 +71,7 @@ class HikDeviceUserImportServiceTest {
                 branchRepository,
                 tenantRepository,
                 encryptionUtil,
+                targetPolicy,
                 new ObjectMapper(),
                 employeeFaceImageService,
                 isapiEmployeeUserSyncService);

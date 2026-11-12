@@ -93,6 +93,7 @@ public class HikDeviceUserImportService {
     private final BranchRepository branchRepository;
     private final TenantRepository tenantRepository;
     private final EncryptionUtil encryptionUtil;
+    private final DeviceTargetPolicy targetPolicy;
     private final ObjectMapper objectMapper;
     private final EmployeeFaceImageService employeeFaceImageService;
     private final IsapiEmployeeUserSyncService isapiEmployeeUserSyncService;
@@ -130,7 +131,8 @@ public class HikDeviceUserImportService {
         Branch branch = branchRepository.findById(branchId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
 
-        List<DeviceConfig> branchDevices = deviceConfigRepository.findByBranchId(branchId);
+        List<DeviceConfig> branchDevices = deviceConfigRepository.findByBranchId(branchId).stream()
+                .filter(device -> !device.isAnpr()).toList();
         if (branchDevices.isEmpty()) {
             throw new BadRequestException("No devices found for branch " + branchId);
         }
@@ -311,6 +313,7 @@ public class HikDeviceUserImportService {
     }
 
     private List<FetchedPerson> fetchViaDirectBasic(DeviceConfig device) {
+        targetPolicy.requireAllowed(device.getDeviceIp(), device.getBranchId());
         if (!StringUtils.hasText(device.getPasswordEncrypted())) {
             throw new IllegalStateException(
                     "Device credential is unavailable; edit the device and enter its password before retrying");
@@ -1071,8 +1074,7 @@ public class HikDeviceUserImportService {
         try {
             return encryptionUtil.decrypt(passwordEncrypted);
         } catch (Exception ex) {
-            log.warn("Could not decrypt device password – using value as-is: {}", ex.getMessage());
-            return passwordEncrypted;
+            throw new IllegalStateException("Cihaz şifrəsinin açarı uyğun deyil. İlkin açarı bərpa edin.");
         }
     }
 

@@ -52,6 +52,7 @@ public class AttendanceService {
 
     @Transactional
     public AttendanceLogDTO logAttendance(AttendanceDTO dto) {
+        requireEmployeeInCurrentTenant(dto.getEmployeeId());
         AttendanceLog log = new AttendanceLog();
         log.setEmployeeId(dto.getEmployeeId());
         log.setCheckInTime(dto.getCheckInTime());
@@ -94,6 +95,7 @@ public class AttendanceService {
 
     @Transactional
     public DailyAttendanceSummaryDTO generateDailySummary(Long employeeId, LocalDate date) {
+        requireEmployeeInCurrentTenant(employeeId);
         List<AttendanceLog> logs = findDayLogs(employeeId, date);
         AttendanceInferenceService.AttendanceInference inference = attendanceInferenceService.inferDay(logs, date);
         Employee employee = employeeRepository.findById(employeeId).orElse(null);
@@ -153,6 +155,8 @@ public class AttendanceService {
                 ? attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTimeBetween(tenantId, employeeId, rangeStart, rangeEnd)
                 : attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(employeeId, rangeStart, rangeEnd);
         logs = new ArrayList<>(logs);
+        logs.addAll(attendanceLogRepository.findManagedLateEntries(tenantId != null ? tenantId : employee.getTenantId(),
+                employeeId, start, end, end.plusDays(1).atStartOfDay()));
         logs.addAll(attendanceLogRepository.findClosedCarryIn(
                 tenantId != null ? tenantId : employee.getTenantId(), employeeId, rangeStart));
 
@@ -213,6 +217,9 @@ public class AttendanceService {
             row.setDate(currentDate);
             row.setCheckInTime(toOffsetDateTime(firstCheckIn));
             row.setCheckOutTime(toOffsetDateTime(lastCheckOut));
+            row.setEntryMethod(endpointMethod(logs, firstCheckIn, true));
+            row.setExitMethod(endpointMethod(logs, lastCheckOut, false));
+            row.setManagedAttendance(dayLogs.stream().anyMatch(log -> log.getAnprWorkDate() != null));
             row.setHoursWorked(hoursWorked);
             row.setLateMinutes(lateMinutes);
             row.setEarlyLeaveMinutes(earlyLeaveMinutes);
@@ -227,6 +234,14 @@ public class AttendanceService {
         }
 
         return rows;
+    }
+
+    private static String endpointMethod(List<AttendanceLog> logs, LocalDateTime time, boolean entry) {
+        if (time == null) return null;
+        return logs.stream()
+                .filter(log -> time.equals(entry ? log.getCheckInTime() : log.getCheckOutTime()))
+                .map(log -> entry ? log.getEntryMethod() : log.getExitMethod())
+                .filter(java.util.Objects::nonNull).findFirst().orElse(null);
     }
 
     public EmployeeAttendanceSummaryDTO getEmployeeAttendanceSummary(Long employeeId, LocalDate start, LocalDate end) {
@@ -291,6 +306,14 @@ public class AttendanceService {
         dto.setIsLeave(s.getIsLeave());
         dto.setAttendanceStatus(s.getAttendanceStatus());
         return dto;
+    }
+
+    private void requireEmployeeInCurrentTenant(Long employeeId) {
+        Long tenantId = TenantContext.getTenantId();
+        // Background calculations have no request tenant; HR writes must stay inside their company.
+        if (tenantId != null && employeeRepository.findByTenantIdAndId(tenantId, employeeId).isEmpty()) {
+            throw new ResourceNotFoundException("Employee", employeeId);
+        }
     }
 
     private Employee getAccessibleEmployee(Long employeeId) {
@@ -372,6 +395,8 @@ public class AttendanceService {
         Long tenant = TenantContext.getTenantId() != null ? TenantContext.getTenantId()
                 : employee != null ? employee.getTenantId() : null;
         var all = new ArrayList<>(candidates);
+        all.addAll(attendanceLogRepository.findManagedLateEntries(tenant, employeeId, date, date,
+                date.plusDays(1).atStartOfDay()));
         all.addAll(attendanceLogRepository.findClosedCarryIn(tenant, employeeId, date.atStartOfDay()));
         return AttendanceDayAllocation.forDay(all, date,
                 sourceDate -> attendanceScheduleResolver.resolve(employee, sourceDate).shiftType());

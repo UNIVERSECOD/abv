@@ -33,7 +33,10 @@ class IsapiClientFaceUploadTest {
         try (MockedConstruction<DigestHttpClient> clients = mockConstruction(DigestHttpClient.class,
                 (client, context) -> when(client.putBytes(anyString(), anyString(), any(byte[].class)))
                         .thenReturn(response))) {
-            assertThat(new IsapiClient().uploadFaceToFDLib(device, employeeNo, photo).success()).isTrue();
+            IsapiClient client = new IsapiClient();
+            org.springframework.test.util.ReflectionTestUtils.setField(client, "targetPolicy",
+                    org.mockito.Mockito.mock(com.abv.hrerpisapi.device.DeviceTargetPolicy.class));
+            assertThat(client.uploadFaceToFDLib(device, employeeNo, photo).success()).isTrue();
             ArgumentCaptor<String> contentType = ArgumentCaptor.forClass(String.class);
             ArgumentCaptor<byte[]> body = ArgumentCaptor.forClass(byte[].class);
             verify(clients.constructed().getFirst()).putBytes(

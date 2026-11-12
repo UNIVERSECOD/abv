@@ -49,6 +49,7 @@ class DoorAttendanceSyncServiceTest {
     @Mock private EmployeeShiftResolver employeeShiftResolver;
     @Mock private AttendanceSessionPolicy attendanceSessionPolicy;
     @Mock private CombinedDeviceAttendanceService combinedDeviceAttendanceService;
+    @Mock private AnprAttendanceService anprAttendance;
 
     @InjectMocks
     private DoorAttendanceSyncService doorAttendanceSyncService;

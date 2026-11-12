@@ -4,6 +4,8 @@ import com.hic.model.AttendanceLog;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -16,7 +18,7 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     // Include closed/manual rows as boundaries: never jump over one to close an older open row.
     @Query(value = "select * from attendance_logs where tenant_id = :tenantId and employee_id = :employeeId "
-            + "and check_in_time <= :time and combined_area_id is null "
+            + "and check_in_time <= :time and combined_area_id is null and anpr_area_id is null "
             + "order by check_in_time desc, id desc limit 1", nativeQuery = true)
     java.util.Optional<AttendanceLog> findDirectionalSessionAt(@Param("tenantId") Long tenantId,
             @Param("employeeId") Long employeeId, @Param("time") LocalDateTime time);
@@ -27,8 +29,31 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
     List<AttendanceLog> findClosedCarryIn(@Param("tenantId") Long tenantId,
             @Param("employeeId") Long employeeId, @Param("start") LocalDateTime start);
 
+    @Query("""
+            select a from AttendanceLog a where a.tenantId = :tenantId
+                and (:employeeId is null or a.employeeId = :employeeId)
+                and a.anprWorkDate between :start and :end and a.checkInTime >= :nextMidnight
+            """)
+    List<AttendanceLog> findManagedLateEntries(@Param("tenantId") Long tenantId, @Param("employeeId") Long employeeId,
+            @Param("start") java.time.LocalDate start, @Param("end") java.time.LocalDate end,
+            @Param("nextMidnight") LocalDateTime nextMidnight);
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select a from AttendanceLog a where a.tenantId = :tenantId and a.employeeId = :employeeId
+                and a.anprAreaId is null and a.checkInTime >= :start and a.checkInTime < :end
+                and (a.areaSnapshotId is null or a.areaSnapshotId = :area)
+            order by a.id
+            """)
+    List<AttendanceLog> findArchiveLegacySessions(@Param("tenantId") Long tenantId, @Param("employeeId") Long employeeId,
+            @Param("area") Long area, @Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
     // Tenant-aware methods
     java.util.Optional<AttendanceLog> findByTenantIdAndEmployeeIdAndCombinedAreaIdAndCombinedWorkDate(
+            Long tenantId, Long employeeId, Long areaId, java.time.LocalDate workDate);
+
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    java.util.Optional<AttendanceLog> findByTenantIdAndEmployeeIdAndAnprAreaIdAndAnprWorkDate(
             Long tenantId, Long employeeId, Long areaId, java.time.LocalDate workDate);
 
     List<AttendanceLog> findByTenantIdAndCheckInTimeBetween(Long tenantId, LocalDateTime start, LocalDateTime end);
@@ -58,7 +83,17 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     java.util.Optional<AttendanceLog> findByTenantIdAndEmployeeIdAndCheckInTime(Long tenantId, Long employeeId, LocalDateTime checkInTime);
     java.util.Optional<AttendanceLog> findByEmployeeIdAndCheckInTime(Long employeeId, LocalDateTime checkInTime);
+    @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     java.util.Optional<AttendanceLog> findByTenantIdAndId(Long tenantId, Long id);
+
+    @Modifying
+    @Query("""
+            update AttendanceLog a set a.status = :status, a.anprDeadline = coalesce(a.anprDeadline, :deadline)
+            where a.tenantId = :tenantId and a.id = :id and a.checkInTime = :entry
+                and a.checkOutTime is null and a.manualOverride = false
+            """)
+    int updateOpenAnprStatus(@Param("tenantId") Long tenantId, @Param("id") Long id,
+            @Param("entry") LocalDateTime entry, @Param("status") String status, @Param("deadline") LocalDateTime deadline);
     java.util.Optional<AttendanceLog> findByTenantIdAndEntryPunchId(Long tenantId, Long entryPunchId);
     boolean existsByTenantIdAndExitPunchId(Long tenantId, Long exitPunchId);
 

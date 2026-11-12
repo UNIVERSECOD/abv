@@ -289,6 +289,7 @@ public class DeviceEmployeeAssignmentService {
         if (!sameTenant(tenantId, device.getTenantId())) {
             throw new BadRequestException("Device does not belong to your tenant");
         }
+        if (device.isAnpr()) throw new BadRequestException("ANPR kamera əməkdaş sinxronunu dəstəkləmir.");
         return device;
     }
 

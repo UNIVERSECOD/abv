@@ -16,6 +16,7 @@ public class DeviceAreaService {
     private final DeviceConfigRepository devices;
     private final BranchRepository branches;
     private final EmployeeAreaAssignmentService assignments;
+    private final DeviceTargetPolicy targetPolicy;
 
     /** Local metadata only; never sends commands to a physical terminal. */
     @Transactional
@@ -28,6 +29,8 @@ public class DeviceAreaService {
         if (branchId != null) branches.findByIdAndTenantId(branchId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ərazi", branchId));
         if (java.util.Objects.equals(device.getBranchId(), branchId)) return;
+        if (device.isAnpr()) throw new BadRequestException("ANPR kameranın ərazisini dəyişmək üçün onu yenidən qeydiyyatdan keçirin.");
+        targetPolicy.requireAllowed(device.getDeviceIp(), branchId);
         if ("BOTH".equals(device.getDoorRole())) {
             device.setAttendanceRoleSince(com.hic.util.AppTimeZone.now());
         }

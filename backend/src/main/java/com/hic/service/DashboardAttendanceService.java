@@ -64,7 +64,7 @@ public class DashboardAttendanceService {
         for (var item : latest.entrySet()) {
             Transition last = item.getValue();
             if (!last.entry()) continue;
-            var schedule = schedules.apply(byId.get(item.getKey()), last.log().getCheckInTime().toLocalDate());
+            var schedule = schedules.apply(byId.get(item.getKey()), AttendanceDayAllocation.workDate(last.log()));
             LocalDateTime calendarDeadline = AttendanceSessionPolicy.calendarDayDeadline(last.log());
             boolean expired = calendarDeadline != null ? !now.isBefore(calendarDeadline)
                     : ShiftTypes.isFlexible(last.log().getShiftType())

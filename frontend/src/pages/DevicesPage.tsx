@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout.tsx'
 import DeviceReconciliationModal from '../components/DeviceReconciliationModal'
+import AnprCapabilitiesDialog from '../components/AnprCapabilitiesDialog'
 import { useAuthStore } from '../store/authStore'
 import { useDeviceStore } from '../store/deviceStore.ts'
 import { DeviceConfig, Branch, Door, DeviceEmployeeAssignmentView } from '../types'
@@ -13,6 +14,7 @@ import { doorRoleLabel, statusLabel } from '../i18n/labels.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { isDeviceOnline, relativeTime, ONLINE_THRESHOLD_MINUTES } from '../utils/deviceOnline.ts'
 import { toast } from '../store/toastStore.ts'
+import { splitDeviceEndpoint } from '../utils/deviceEndpoint'
 
 interface DeviceFormData {
   deviceName: string
@@ -22,6 +24,7 @@ interface DeviceFormData {
   password: string
   branchId: number | ''
   status: string
+  anpr: boolean
 }
 
 const defaultForm: DeviceFormData = {
@@ -32,18 +35,22 @@ const defaultForm: DeviceFormData = {
   password: '',
   branchId: '',
   status: 'ACTIVE',
+  anpr: false,
 }
 
 export default function DevicesPage() {
   const [searchParams] = useSearchParams()
   const linkOpened = useRef(false)
   const { devices, loading, error, fetchDevices, syncDevice, createDevice, updateDevice, deleteDevice } = useDeviceStore()
+  const [cameraHealth, setCameraHealth] = useState<Record<number, boolean>>({})
+  const hasAnpr = devices.some(device => device.anpr)
   const [branches, setBranches] = useState<Branch[]>([])
   const [showModal, setShowModal] = useState(false)
   const [editingDevice, setEditingDevice] = useState<DeviceConfig | null>(null)
   const [form, setForm] = useState<DeviceFormData>(defaultForm)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [deleteConfirm, setDeleteConfirm] = useState<DeviceConfig | null>(null)
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -58,6 +65,7 @@ export default function DevicesPage() {
   const [doorDeleteConfirm, setDoorDeleteConfirm] = useState<Door | null>(null)
   const [assignmentDevice, setAssignmentDevice] = useState<DeviceConfig | null>(null)
   const [reconciliationDevice, setReconciliationDevice] = useState<DeviceConfig | null>(null)
+  const [capabilityDevice, setCapabilityDevice] = useState<{ id: number; deviceName?: string } | null>(null)
   const canReconcile = useAuthStore(s => s.user?.userType === 'HEAD_OFFICE_HR')
   const [assignmentView, setAssignmentView] = useState<DeviceEmployeeAssignmentView | null>(null)
   const [manualEmployeeIds, setManualEmployeeIds] = useState<number[]>([])
@@ -79,6 +87,31 @@ export default function DevicesPage() {
     return () => { if (tickRef.current) clearInterval(tickRef.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!hasAnpr) return
+    let active = true
+    let pending = false
+    const refresh = async () => {
+      if (pending) return
+      pending = true
+      try {
+        const { data } = await deviceApi.getHealth()
+        if (active) setCameraHealth(data.data.available
+          ? Object.fromEntries(data.data.devices
+            .filter(device => device.anpr && typeof device.online === 'boolean')
+            .map(device => [device.id, device.online as boolean]))
+          : {})
+      } catch {
+        if (active) setCameraHealth({})
+      } finally {
+        pending = false
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => { void refresh() }, 30_000)
+    return () => { active = false; window.clearInterval(timer) }
+  }, [hasAnpr])
 
   const loadDoors = async (branchId: number) => {
     try {
@@ -118,6 +151,7 @@ export default function DevicesPage() {
   }
 
   const openCreate = () => {
+    setFieldErrors({})
     setEditingDevice(null)
     setForm(defaultForm)
     setSelectedDoorId('')
@@ -129,15 +163,17 @@ export default function DevicesPage() {
   }
 
   const openEdit = (device: DeviceConfig) => {
+    setFieldErrors({})
     setEditingDevice(device)
     setForm({
       deviceName: device.deviceName || '',
-      deviceIp: device.deviceIp,
-      devicePort: device.devicePort || 80,
+      deviceIp: splitDeviceEndpoint(device.deviceIp).host,
+      devicePort: splitDeviceEndpoint(device.deviceIp, device.devicePort || 80).port,
       username: device.username || 'admin',
       password: '',
       branchId: device.branchId || '',
       status: device.status || 'ACTIVE',
+      anpr: device.anpr === true,
     })
     setSelectedDoorId(device.doorId ?? '')
     setDoorRole((device.doorRole as 'ENTRY' | 'EXIT' | 'BOTH') ?? '')
@@ -150,7 +186,7 @@ export default function DevicesPage() {
   }
 
   useEffect(() => {
-    if (linkOpened.current) return
+    if (linkOpened.current || !canReconcile) return
     const deviceId = Number(searchParams.get('device'))
     const areaId = Number(searchParams.get('area'))
     const device = devices.find(d => d.id === deviceId)
@@ -161,13 +197,19 @@ export default function DevicesPage() {
   }, [devices, searchParams])
 
   const handleSave = async () => {
-    if (!form.deviceIp.trim()) { setFormError('Cihaz IP-si tələb olunur.'); return }
-    if (!form.username.trim()) { setFormError('İstifadəçi adı tələb olunur.'); return }
-    if (!editingDevice && !form.password.trim()) { setFormError('Şifrə tələb olunur.'); return }
-    if (form.branchId && selectedDoorId === 'new' && !newDoorName.trim()) {
-      setFormError('Yeni qapı yaradarkən qapı adı tələb olunur.')
-      return
+    const errors: Record<string, string> = {}
+    if (!form.deviceIp.trim()) errors.deviceIp = 'Cihaz IP-si tələb olunur.'
+    if (form.devicePort !== '' && (!Number.isInteger(form.devicePort) || form.devicePort < 1 || form.devicePort > 65535)) errors.devicePort = 'Port 1–65535 aralığında olmalıdır.'
+    if (!form.username.trim()) errors.username = 'İstifadəçi adı tələb olunur.'
+    if (!editingDevice && !form.password.trim()) errors.password = 'Şifrə tələb olunur.'
+    if (form.anpr && !form.branchId) errors.branchId = 'ANPR kamera üçün ərazi seçin.'
+    if (form.anpr && doorRole !== 'ENTRY' && doorRole !== 'EXIT') errors.doorRole = 'Giriş və ya Çıxış rolunu seçin.'
+    if (!form.anpr && form.branchId && selectedDoorId === 'new' && !newDoorName.trim()) {
+      errors.newDoorName = 'Qapı adı tələb olunur.'
     }
+    setFieldErrors(errors)
+    setFormError(null)
+    if (Object.keys(errors).length) return
     setSaving(true)
     setFormError(null)
     try {
@@ -175,7 +217,8 @@ export default function DevicesPage() {
         ...form,
         devicePort: form.devicePort ? Number(form.devicePort) : 80,
         // Area membership is saved through the local endpoint shared with the area panel.
-        branchId: undefined,
+        branchId: form.branchId ? Number(form.branchId) : undefined,
+        doorRole: form.anpr ? doorRole : undefined,
       }
       let deviceId = editingDevice?.id
       if (editingDevice) {
@@ -185,14 +228,16 @@ export default function DevicesPage() {
         const createRes = await deviceApi.create(payload)
         const created = Array.isArray(createRes.data) ? createRes.data[0] : createRes.data?.data ?? createRes.data
         deviceId = typeof created?.id === 'number' ? created.id : undefined
+        // Keep the successful registration if a later area/door assignment fails.
+        if (deviceId) { setEditingDevice(created); setForm(current => ({ ...current, password: '' })) }
       }
 
-      if (deviceId) {
+      if (deviceId && !form.anpr) {
         await deviceApi.assignArea(deviceId, form.branchId ? Number(form.branchId) : null)
       }
 
       // Door and Role assignment
-      if (deviceId && form.branchId) {
+      if (deviceId && form.branchId && !form.anpr) {
         let doorId = selectedDoorId && selectedDoorId !== 'new' ? Number(selectedDoorId) : undefined;
         if (selectedDoorId === 'new') {
           const createDoorRes = await doorApi.create({
@@ -211,9 +256,12 @@ export default function DevicesPage() {
       await fetchDevices()
       setShowModal(false)
       toast.success(editingDevice ? 'Cihaz yeniləndi' : 'Cihaz əlavə edildi')
+      if (deviceId && form.anpr) setCapabilityDevice({ id: deviceId, deviceName: form.deviceName })
     } catch (e: unknown) {
       const message = getApiErrorMessage(e, 'Cihazı yadda saxlamaq alınmadı')
-      setFormError(message)
+      if (/IP|port|ünvan/.test(message)) setFieldErrors({ deviceIp: message })
+      else if (form.anpr && /rol/.test(message)) setFieldErrors({ doorRole: message })
+      else setFormError(message)
       toast.error('Cihaz saxlanılmadı', message)
     } finally {
       setSaving(false)
@@ -342,7 +390,9 @@ export default function DevicesPage() {
   }
 
   // Combine immediate bridge state with the last successful sync freshness.
-  const activeCount = devices.filter((d: DeviceConfig) => isDeviceOnline(d.status, d.lastSyncTime, d.online)).length
+  const activeCount = devices.filter(d => d.anpr
+    ? d.status === 'ACTIVE' && cameraHealth[d.id] === true
+    : isDeviceOnline(d.status, d.lastSyncTime, d.online)).length
   const inactiveCount = devices.length - activeCount
 
   return (
@@ -382,7 +432,7 @@ export default function DevicesPage() {
               </svg>
               Qapıları idarə et
             </button>
-            <button
+            {canReconcile && <button
               onClick={openCreate}
               className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors"
               style={{ background: '#a855f7' }}
@@ -391,7 +441,7 @@ export default function DevicesPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               Cihaz əlavə et
-            </button>
+            </button>}
           </div>
         </div>
 
@@ -457,7 +507,7 @@ export default function DevicesPage() {
               </svg>
             </div>
             <p className="text-gray-500 text-sm">Hələ heç bir cihaz qurulmayıb.</p>
-            <button onClick={openCreate} className="mt-3 text-sm font-medium" style={{ color: '#a855f7' }}>
+            <button hidden={!canReconcile} onClick={openCreate} className="mt-3 text-sm font-medium" style={{ color: '#a855f7' }}>
               + İlk cihazı əlavə et
             </button>
           </div>
@@ -477,14 +527,16 @@ export default function DevicesPage() {
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-semibold text-gray-900 text-sm">{device.deviceName || device.deviceId}</p>
                     {(() => {
-                      const online = isDeviceOnline(device.status, device.lastSyncTime, device.online)
+                      const unknown = device.anpr && device.status === 'ACTIVE' && cameraHealth[device.id] === undefined
+                      const online = device.anpr ? device.status === 'ACTIVE' && cameraHealth[device.id] === true
+                        : isDeviceOnline(device.status, device.lastSyncTime, device.online)
                       return (
                         <span
                           className="px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1"
-                          style={online
+                          style={unknown ? { background: '#f1f5f9', color: '#475569' } : online
                             ? { background: '#d1fae5', color: '#065f46' }
                             : { background: '#fee2e2', color: '#991b1b' }}
-                          title={online
+                          title={device.anpr ? 'Kameranın bağlantı vəziyyəti' : online
                             ? `Onlayn — son ${ONLINE_THRESHOLD_MINUTES} dəqiqə ərzində sinxronlaşdı`
                             : `Oflayn — son sinxron: ${relativeTime(device.lastSyncTime)}`}
                         >
@@ -496,10 +548,11 @@ export default function DevicesPage() {
                           ) : (
                             <span className="inline-block w-2 h-2 rounded-full bg-red-400"></span>
                           )}
-                          {online ? 'Onlayn' : 'Oflayn'}
+                          {unknown ? 'Məlum deyil' : online ? 'Onlayn' : 'Oflayn'}
                         </span>
                       )
                     })()}
+                    {device.anpr && <span className="rounded bg-violet-100 px-2 py-0.5 text-xs text-violet-800">ANPR kamera</span>}
                     {device.doorRole && (
                       <span
                         className="px-2 py-0.5 rounded-full text-xs font-medium"
@@ -521,7 +574,7 @@ export default function DevicesPage() {
                 <div className="hidden md:block text-center min-w-[130px]">
                   <p className="text-xs text-gray-400 mb-0.5">IP ünvanı</p>
                   <p className="text-sm font-mono text-gray-700">
-                    {device.deviceIp}{device.devicePort && device.devicePort !== 80 ? `:${device.devicePort}` : ''}
+                    {device.deviceIp}
                   </p>
                 </div>
 
@@ -540,7 +593,11 @@ export default function DevicesPage() {
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
-                  <button
+                  {device.anpr && <button onClick={() => setCapabilityDevice(device)}
+                    className="px-3 py-1.5 text-xs font-medium text-violet-700 bg-violet-50 rounded-lg hover:bg-violet-100">
+                    İmkanları yoxla
+                  </button>}
+                  {canReconcile && <button
                     onClick={() => handleSync(device.id)}
                     disabled={syncingId === device.id}
                     className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors disabled:opacity-50"
@@ -550,18 +607,18 @@ export default function DevicesPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                     {syncingId === device.id ? 'Sinxronlaşdırılır...' : 'Sinxron'}
-                  </button>
-                  <button
+                  </button>}
+                  {!device.anpr && <button
                     onClick={() => openEmployeeAssignments(device)}
                     className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                   >
                     Əməkdaşlar
-                  </button>
-                  {canReconcile && <button onClick={() => setReconciliationDevice(device)}
+                  </button>}
+                  {canReconcile && !device.anpr && <button onClick={() => setReconciliationDevice(device)}
                     className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors">
                     Əməkdaşları uyğunlaşdır
                   </button>}
-                  <button
+                  {!device.anpr && <button
                     onClick={() => handleEmployeeSync(device)}
                     disabled={employeeSyncingId === device.id}
                     className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50"
@@ -571,14 +628,16 @@ export default function DevicesPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
                     </svg>
                     {employeeSyncingId === device.id ? 'Göndərilir...' : 'Əməkdaş sinxronu'}
-                  </button>
+                  </button>}
                   <button
+                    hidden={!canReconcile}
                     onClick={() => openEdit(device)}
                     className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
                   >
                     Redaktə et
                   </button>
                   <button
+                    hidden={!canReconcile}
                     onClick={() => setDeleteConfirm(device)}
                     className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
                   >
@@ -592,6 +651,7 @@ export default function DevicesPage() {
       </div>
 
       {/* Create/Edit Modal */}
+      {capabilityDevice && <AnprCapabilitiesDialog device={capabilityDevice} onClose={() => setCapabilityDevice(null)} />}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
@@ -623,6 +683,7 @@ export default function DevicesPage() {
                   placeholder="192.168.1.100"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 />
+                {fieldErrors.deviceIp && <p className="mt-1 text-xs text-red-600">{fieldErrors.deviceIp}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
@@ -633,6 +694,7 @@ export default function DevicesPage() {
                   placeholder="80"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 />
+                {fieldErrors.devicePort && <p className="mt-1 text-xs text-red-600">{fieldErrors.devicePort}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">İstifadəçi adı</label>
@@ -642,6 +704,7 @@ export default function DevicesPage() {
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 />
+                {fieldErrors.username && <p className="mt-1 text-xs text-red-600">{fieldErrors.username}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -654,11 +717,22 @@ export default function DevicesPage() {
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 />
+                {fieldErrors.password && <p className="mt-1 text-xs text-red-600">{fieldErrors.password}</p>}
+              </div>
+              <div>
+                <label htmlFor="device-kind" className="block text-sm font-medium text-gray-700 mb-1">Cihaz növü</label>
+                <select id="device-kind" value={form.anpr ? 'ANPR' : 'TERMINAL'} disabled={!!editingDevice}
+                  onChange={e => { setForm({ ...form, anpr: e.target.value === 'ANPR' }); setDoorRole('') }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  <option value="TERMINAL">Üz və giriş terminalı</option>
+                  <option value="ANPR">ANPR kamera</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Ərazi</label>
                 <select
                   value={form.branchId}
+                  disabled={form.anpr && !!editingDevice}
                   onChange={(e) => {
                     const branchId = e.target.value ? Number(e.target.value) : ''
                     setForm({ ...form, branchId })
@@ -677,8 +751,23 @@ export default function DevicesPage() {
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
                 </select>
+                {fieldErrors.branchId && <p className="mt-1 text-xs text-red-600">{fieldErrors.branchId}</p>}
               </div>
-              {form.branchId && (
+              {form.anpr && (
+                <div>
+                  <label htmlFor="anpr-role" className="block text-sm font-medium text-gray-700 mb-1">Kamera rolu</label>
+                  <select id="anpr-role" value={doorRole}
+                    onChange={e => setDoorRole(e.target.value as 'ENTRY' | 'EXIT' | '')}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">Rol seçin...</option>
+                    <option value="ENTRY">Giriş</option>
+                    <option value="EXIT">Çıxış</option>
+                  </select>
+                  {fieldErrors.doorRole && <p className="mt-1 text-xs text-red-600">{fieldErrors.doorRole}</p>}
+                  <p className="mt-2 text-xs text-gray-600">Eyni ərazidə hər iki rol qeydiyyatdan keçdikdən sonra davamiyyət növbəti gün başlayır.</p>
+                </div>
+              )}
+              {form.branchId && !form.anpr && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Qapı</label>
@@ -707,6 +796,7 @@ export default function DevicesPage() {
                         placeholder="məs., Əsas qapı"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                       />
+                      {fieldErrors.newDoorName && <p className="mt-1 text-xs text-red-600">{fieldErrors.newDoorName}</p>}
                     </div>
                   )}
                   <div>

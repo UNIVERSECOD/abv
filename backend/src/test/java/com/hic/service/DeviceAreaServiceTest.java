@@ -16,6 +16,8 @@ class DeviceAreaServiceTest {
     @Mock DeviceConfigRepository devices;
     @Mock BranchRepository branches;
     @Mock EmployeeAreaAssignmentService assignments;
+    @Mock private DeviceTargetPolicy targetPolicy;
+
     @InjectMocks DeviceAreaService service;
     @AfterEach void clear() { TenantContext.clear(); }
     @Test void movesLocallyAndReconcilesMembershipWithoutChangingTerminalIdentity() {

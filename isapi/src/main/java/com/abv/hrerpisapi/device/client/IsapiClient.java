@@ -33,6 +33,9 @@ import java.util.UUID;
 @Service
 public class IsapiClient {
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.abv.hrerpisapi.device.DeviceTargetPolicy targetPolicy;
+
     private static final ObjectMapper OM = new ObjectMapper();
 
     // Device expects ISO8601 with offset (e.g. 2026-04-21T15:19:00+04:00)
@@ -805,11 +808,23 @@ public class IsapiClient {
 
     public record UserOperationResult(boolean success, int statusCode, String responseSnippet) {}
 
+    static boolean isDeviceInfo(String body) {
+        if (body == null) return false;
+        try {
+            JsonNode info = OM.readTree(body).path("DeviceInfo");
+            return info.isObject() && (info.hasNonNull("model") || info.hasNonNull("serialNumber"));
+        } catch (Exception ignored) {
+            return body.contains("<DeviceInfo") && body.contains("</DeviceInfo>")
+                    && (body.contains("<model>") || body.contains("<serialNumber>"));
+        }
+    }
+
     public DeviceStatusCheckResult checkDeviceStatus(DeviceEntity device) {
         try {
-            HttpResponse<String> resp = clientFor(device).get("/ISAPI/System/deviceInfo?format=json");
+            HttpResponse<String> resp = clientFor(device).get(device.isAnpr()
+                    ? "/ISAPI/System/deviceInfo" : "/ISAPI/System/deviceInfo?format=json");
             return new DeviceStatusCheckResult(
-                    resp.statusCode() == 200,
+                    resp.statusCode() == 200 && isDeviceInfo(resp.body()),
                     resp.statusCode(),
                     snippet(resp.body()));
         } catch (Exception e) {
@@ -817,6 +832,26 @@ public class IsapiClient {
             log.info("Device status check exception for device {}", device.getId(), e);
             return new DeviceStatusCheckResult(false, -1, snippet(e.getMessage()));
         }
+    }
+
+    public int searchAnprArchive(DeviceEntity device, OffsetDateTime start, OffsetDateTime end,
+            java.util.function.Consumer<List<AnprArchiveSearch.Capture>> save) throws IOException, InterruptedException {
+        var client = clientFor(device);
+        try {
+            return AnprArchiveSearch.readPages(start, end,
+                    xml -> archiveResponse(client, "/ISAPI/ContentMgmt/search", xml), false, save);
+        } catch (AnprArchiveSearch.UnsupportedSearch unsupported) {
+            return AnprArchiveSearch.readPages(start, end,
+                    xml -> archiveResponse(client, "/ISAPI/Intelligent/vehicleRecognition/Search/channels/1", xml), true, save);
+        }
+    }
+
+    private String archiveResponse(DigestHttpClient client, String path, String xml) throws IOException, InterruptedException {
+        var response = client.post(path, "application/xml", xml);
+        if (response.statusCode() == 404 || response.statusCode() == 405
+                || response.statusCode() == 501) throw new AnprArchiveSearch.UnsupportedSearch();
+        if (response.statusCode() != 200) throw new IOException("ANPR archive search returned HTTP " + response.statusCode());
+        return response.body();
     }
 
     // -----------------------------------------------------------------------
@@ -915,10 +950,12 @@ public class IsapiClient {
     }
 
     private DigestHttpClient clientFor(DeviceEntity device) {
+        targetPolicy.requireAllowed(device.getIp());
         return new DigestHttpClient(
                 "http://" + device.getIp(),
                 device.getUsername(),
-                device.getPassword());
+                device.getPassword(),
+                device.isAnpr());
     }
 
     private List<String> buildFaceImageCandidatePaths(String faceUrl) {

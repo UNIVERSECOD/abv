@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout.tsx'
+import AttendanceMethodTime from '../components/AttendanceMethodTime.tsx'
 import PaginationBar from '../components/PaginationBar.tsx'
 import { attendanceApi } from '../api/attendanceApi.ts'
 import { positionApi } from '../api/positionApi.ts'
@@ -206,9 +207,12 @@ export default function ReportsPage() {
     { label: 'Ad soyad', cell: r => <span className="font-medium text-gray-900">{r.fullName}</span> },
     ...(!aggregate ? [{ label: 'Status', cell: (r: AttendanceOverviewRow) => <Status row={r} /> }] : []),
     ...(!aggregate ? [
-      { label: 'Giriş', cell: (r: AttendanceOverviewRow) => daily ? formatAttendanceTime(r.checkInTime) : formatAttendanceDateTime(r.checkInTime) },
-      { label: 'Çıxış', cell: (r: AttendanceOverviewRow) => daily && (!r.checkOutTime || r.checkOutTime.slice(0, 10) === r.date)
-        ? formatAttendanceTime(r.checkOutTime) : formatAttendanceDateTime(r.checkOutTime) },
+      { label: 'Giriş', cell: (r: AttendanceOverviewRow) => <AttendanceMethodTime method={r.entryMethod}
+        time={daily && (!r.checkInTime || r.checkInTime.slice(0, 10) === r.date)
+          ? formatAttendanceTime(r.checkInTime) : formatAttendanceDateTime(r.checkInTime)} /> },
+      { label: 'Çıxış', cell: (r: AttendanceOverviewRow) => <AttendanceMethodTime method={r.exitMethod}
+        time={daily && (!r.checkOutTime || r.checkOutTime.slice(0, 10) === r.date)
+          ? formatAttendanceTime(r.checkOutTime) : formatAttendanceDateTime(r.checkOutTime)} /> },
     ] : []),
     { label: 'İş müddəti', cell: r => <Metric value={r.workedMinutes} tone="work" /> },
     ...(!detail ? [

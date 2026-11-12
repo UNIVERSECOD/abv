@@ -161,6 +161,11 @@ public class AttendanceReportService {
         List<AttendanceLog> logs = tenantId != null
                 ? attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(tenantId, startDt, endDt)
                 : attendanceLogRepository.findByCheckInTimeBetween(startDt, endDt);
+        if (tenantId != null) {
+            logs = new ArrayList<>(logs);
+            logs.addAll(attendanceLogRepository.findManagedLateEntries(tenantId, null, start, end,
+                    end.plusDays(1).atStartOfDay()));
+        }
 
         Set<Long> employeeIds = logs.stream()
                 .map(AttendanceLog::getEmployeeId)
@@ -264,8 +269,8 @@ public class AttendanceReportService {
         Set<SessionIdentity> seen = new java.util.HashSet<>();
         AttendanceLog pending = null;
         for (AttendanceLog log : ordered) {
-            // Combined devices already represent one independent area/day bucket.
-            if (log.getCombinedAreaId() != null) {
+            // Aggregated sessions already represent an independent area and work date.
+            if (log.getCombinedAreaId() != null || log.getAnprAreaId() != null) {
                 sessions.add(log);
                 continue;
             }
@@ -311,7 +316,7 @@ public class AttendanceReportService {
         AttendanceReportRowDTO dto = baseEmployeeRow(employee, departmentNames, positionNames, branchNames);
         dto.setArea(resolveLogArea(log, areaNamesByDeviceIdentifier, dto.getArea()));
         dto.setAttendanceLogId(log.getId());
-        dto.setDate(log.getCheckInTime().toLocalDate());
+        dto.setDate(AttendanceDayAllocation.workDate(log));
         LocalDateTime entry = reportEntry(log);
         dto.setCheckInTime(toOffsetDateTime(entry));
         dto.setCheckOutTime(toOffsetDateTime(log.getCheckOutTime()));
@@ -321,6 +326,8 @@ public class AttendanceReportService {
             dto.setWorkedMinutes(0);
         }
         dto.setVerificationMethod(normalizeVerificationMethod(log.getVerificationMethod()));
+        dto.setEntryMethod(entry.equals(log.getCheckInTime()) ? log.getEntryMethod() : log.getLastEntryMethod());
+        dto.setExitMethod(log.getExitMethod());
         dto.setShiftType(scheduleShiftType);
         dto.setStatus(attendanceSessionPolicy.effectiveStatus(employee, log));
         return dto;
@@ -388,7 +395,7 @@ public class AttendanceReportService {
         if (entry == null) {
             return false;
         }
-        LocalDate workDate = entry.toLocalDate();
+        LocalDate workDate = AttendanceDayAllocation.workDate(log);
         return !workDate.isBefore(start) && !workDate.isAfter(end);
     }
 

@@ -43,6 +43,39 @@ class AcsEventHistoryPollerTest {
     private AcsEventHistoryPoller poller;
 
     @Test
+    void reachableCameraRefreshesHealthWithoutQueryingTerminalHistory() throws Exception {
+        var device = new DeviceEntity();
+        device.setId(3L);
+        device.setAnpr(true);
+        when(isapiClient.checkDeviceStatus(device))
+                .thenReturn(new IsapiClient.DeviceStatusCheckResult(true, 200, null));
+        assertThat(poller.pollDevice(device)).isZero();
+        verify(deviceCursorService).markCameraReachable(3L);
+        org.mockito.Mockito.verifyNoInteractions(acsIngestService, cursorRepository);
+        verify(isapiClient).checkDeviceStatus(device);
+        org.mockito.Mockito.verifyNoMoreInteractions(isapiClient);
+    }
+
+    @Test
+    void scheduledCameraHealthRecoversWithoutAnAnprEvent() {
+        var camera = new DeviceEntity();
+        camera.setId(3L);
+        camera.setAnpr(true);
+        when(deviceRepository.findByEnabledTrue()).thenReturn(List.of(camera));
+        when(isapiClient.checkDeviceStatus(camera)).thenReturn(
+                new IsapiClient.DeviceStatusCheckResult(false, -1, null),
+                new IsapiClient.DeviceStatusCheckResult(true, 200, null));
+
+        poller.poll();
+        poller.poll();
+
+        var order = org.mockito.Mockito.inOrder(deviceCursorService);
+        order.verify(deviceCursorService).markOffline(3L);
+        order.verify(deviceCursorService).markCameraReachable(3L);
+        org.mockito.Mockito.verifyNoInteractions(acsIngestService, cursorRepository);
+    }
+
+    @Test
     void resolveStartTime_clampsFutureCursorBeforeNow() {
         OffsetDateTime now = OffsetDateTime.parse("2026-09-21T07:10:00+04:00");
 

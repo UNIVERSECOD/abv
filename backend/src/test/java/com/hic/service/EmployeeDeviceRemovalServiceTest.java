@@ -19,6 +19,7 @@ class EmployeeDeviceRemovalServiceTest {
     DeviceConfigRepository devices = mock(DeviceConfigRepository.class);
     EmployeeDeviceRemovalJobRepository jobs = mock(EmployeeDeviceRemovalJobRepository.class);
     EmployeeRemovalDeviceClient client = mock(EmployeeRemovalDeviceClient.class);
+    EmployeeVehicleService vehicles = mock(EmployeeVehicleService.class);
     PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
     List<EmployeeDeviceRemovalJob> stored = new ArrayList<>();
     Employee employee = new Employee();
@@ -28,7 +29,7 @@ class EmployeeDeviceRemovalServiceTest {
     @BeforeEach
     void setup() {
         when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
-        service = new EmployeeDeviceRemovalService(employees, devices, jobs, client, new TransactionTemplate(manager));
+        service = new EmployeeDeviceRemovalService(employees, devices, jobs, client, new TransactionTemplate(manager), vehicles);
         employee.setId(4L);
         employee.setTenantId(1L);
         employee.setEmployeeId("EMP0004");
@@ -68,6 +69,7 @@ class EmployeeDeviceRemovalServiceTest {
         var first = service.terminate(employee, Set.of(10L));
         assertThat(first.getFailedDevices()).isEqualTo(1);
         assertThat(employee.getEmploymentStatus()).isEqualTo(Employee.EmploymentStatus.TERMINATED);
+        verify(vehicles).retireAll(1L, 4L);
         verify(client, never()).delete(anyLong(), anyString());
         var job = stored.get(0);
         assertThat(job.isCompleted()).isFalse();
@@ -77,7 +79,7 @@ class EmployeeDeviceRemovalServiceTest {
         when(jobs.findDueIds(eq(1L), any(), any())).thenReturn(List.of(job.getId()));
         // New service instance demonstrates that progress does not depend on an in-memory queue.
         new EmployeeDeviceRemovalService(employees, devices, jobs, client,
-                new TransactionTemplate(manager)).processDue(1L);
+                new TransactionTemplate(manager), vehicles).processDue(1L);
         assertThat(job.isCompleted()).isTrue();
         assertThat(job.getLastError()).isNull();
         assertThat(service.result(1L, 4L).getFailedDevices()).isZero();

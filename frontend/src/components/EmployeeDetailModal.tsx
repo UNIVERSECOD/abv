@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { Employee } from '../types'
 import LeaveUsageTable from './LeaveUsageTable.tsx'
+import EmployeeVehiclePanel from './EmployeeVehiclePanel'
+import { useAuthStore } from '../store/authStore'
 
 interface EmployeeDetailModalProps {
   employee: Employee
@@ -37,6 +39,7 @@ export default function EmployeeDetailModal({
   onEdit,
   onViewPermissionHistory,
 }: EmployeeDetailModalProps) {
+  const canManageVehicles = useAuthStore(state => state.user?.userType === 'HEAD_OFFICE_HR')
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -275,6 +278,8 @@ export default function EmployeeDetailModal({
                   </div>
                 </div>
               </div>
+              {canManageVehicles && <EmployeeVehiclePanel key={employee.id} employeeId={employee.id}
+                readOnly terminated={employee.employmentStatus === 'TERMINATED'} />}
               <LeaveUsageTable employeeId={employee.id} />
             </div>
           </div>

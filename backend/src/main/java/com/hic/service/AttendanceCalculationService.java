@@ -144,6 +144,8 @@ public class AttendanceCalculationService {
         Long tenant = TenantContext.getTenantId() != null ? TenantContext.getTenantId()
                 : employee != null ? employee.getTenantId() : null;
         var all = new java.util.ArrayList<>(candidates);
+        all.addAll(attendanceLogRepository.findManagedLateEntries(tenant, employeeId, workDate, workDate,
+                workDate.plusDays(1).atStartOfDay()));
         all.addAll(attendanceLogRepository.findClosedCarryIn(tenant, employeeId, workDate.atStartOfDay()));
         return AttendanceDayAllocation.forDay(all, workDate,
                 date -> attendanceScheduleResolver.resolve(employee, date).shiftType());

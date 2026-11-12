@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.HashSet;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,6 +26,7 @@ public class DeviceService {
     private final DeviceConfigRepository deviceConfigRepository;
     private final DeviceSyncService deviceSyncService;
     private final DoorRepository doorRepository;
+    private final AnprAreaConfiguration anprAreas;
 
     public List<DeviceSyncDTO.DeviceConfigDTO> getAll() {
         Long tenantId = TenantContext.getTenantId();
@@ -52,13 +54,16 @@ public class DeviceService {
         Long tenantId = TenantContext.getTenantId();
         
         try {
+            if (tenantId != null) anprAreas.lockTenant(tenantId);
             List<DeviceSyncDTO.DeviceConfigDTO> isapiDevices = deviceSyncService.getAllDevices(null);
             int syncedCount = 0;
+            var cameraAreas = new HashSet<Long>();
             
             for (DeviceSyncDTO.DeviceConfigDTO isapiDevice : isapiDevices) {
                 DeviceConfig existing = deviceConfigRepository.findByDeviceId(isapiDevice.getDeviceId()).orElse(null);
                 
                 if (existing == null) {
+                    if (Boolean.TRUE.equals(isapiDevice.getAnpr())) continue;
                     DeviceConfig newDevice = new DeviceConfig();
                     newDevice.setDeviceId(isapiDevice.getDeviceId());
                     newDevice.setDeviceName(isapiDevice.getDeviceName());
@@ -75,6 +80,10 @@ public class DeviceService {
                     if (tenantId != null && existing.getTenantId() != null && !tenantId.equals(existing.getTenantId())) {
                         continue;
                     }
+                    if (existing.isAnpr()) {
+                        if (tenantId == null || !tenantId.equals(existing.getTenantId())) continue;
+                        if (existing.getBranchId() != null) cameraAreas.add(existing.getBranchId());
+                    }
                     existing.setDeviceName(isapiDevice.getDeviceName());
                     existing.setDeviceIp(isapiDevice.getDeviceIp());
                     existing.setUsername(isapiDevice.getUsername());
@@ -89,6 +98,7 @@ public class DeviceService {
                     log.info("Updated device: {} ({}) status={} lastSyncTime={}", existing.getDeviceName(), existing.getDeviceId(), existing.getStatus(), existing.getLastSyncTime());
                 }
             }
+            for (Long area : cameraAreas) anprAreas.reconcilePair(tenantId, area);
             
             log.info("Device sync completed: {} devices synced", syncedCount);
             return new DeviceSyncDTO.SyncResultDTO(true, "Synced " + syncedCount + " devices from ISAPI", syncedCount);
@@ -107,6 +117,9 @@ public class DeviceService {
             throw new BadRequestException("Device does not belong to your tenant");
         }
         String role = dto.getRole() != null ? dto.getRole().trim().toUpperCase() : null;
+        if (device.isAnpr()) {
+            throw new BadRequestException("Kameranın rolunu cihaz ayarlarından dəyişin.");
+        }
         if (role != null && !"ENTRY".equals(role) && !"EXIT".equals(role) && !"BOTH".equals(role)) {
             throw new BadRequestException("Rol Giriş, Çıxış və ya Giriş və çıxış olmalıdır.");
         }
@@ -157,6 +170,7 @@ public class DeviceService {
         dto.setBranchId(device.getBranchId());
         dto.setDoorId(device.getDoorId());
         dto.setDoorRole(device.getDoorRole());
+        dto.setAnpr(device.isAnpr());
         dto.setStatus(device.getStatus());
         dto.setOnline(device.isOnline());
         dto.setLastSyncTime(device.getLastSyncTime());

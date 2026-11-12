@@ -181,6 +181,9 @@ export interface EmployeeAttendanceRow {
   date: string
   checkInTime?: string
   checkOutTime?: string
+  entryMethod?: string
+  exitMethod?: string
+  managedAttendance?: boolean
   hoursWorked?: number
   lateMinutes?: number
   earlyLeaveMinutes?: number
@@ -402,6 +405,8 @@ export interface AttendanceReportRow {
   checkOutTime?: string
   workedMinutes?: number
   verificationMethod?: string
+  entryMethod?: string
+  exitMethod?: string
   shiftType?: string
   status?: 'OPEN' | 'MISSING_EXIT' | 'CLOSED' | 'MANUALLY_CORRECTED'
 }
@@ -528,6 +533,7 @@ export interface Door {
 }
 
 export interface DeviceConfig {
+  anpr?: boolean
   id: number
   deviceId: string
   deviceName?: string

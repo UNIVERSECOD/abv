@@ -23,10 +23,14 @@ public class DeviceEntity {
     private String username;
 
     @Column(nullable = false)
+    @Convert(converter = com.abv.hrerpisapi.config.DeviceCredentialCipher.class)
     private String password;
 
     private String name;
 
     @Column(nullable = false)
     private boolean enabled = true;
+
+    @Column(nullable = false)
+    private boolean anpr;
 }

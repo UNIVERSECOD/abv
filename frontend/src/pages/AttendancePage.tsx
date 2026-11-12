@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import { attendanceApi } from '../api/attendanceApi.ts'
+import AttendanceMethodTime from '../components/AttendanceMethodTime.tsx'
 import { employeeApi } from '../api/employeeApi.ts'
 import {
   DoorAttendanceSyncResult,
@@ -68,6 +69,7 @@ const statusLabels: Record<EmployeeAttendanceRow['status'], string> = {
 }
 
 function displayStatus(row: EmployeeAttendanceRow): EmployeeAttendanceRow['status'] {
+  if (row.managedAttendance) return row.status
   if (row.status === 'OPEN_SESSION' || row.status === 'MISSING_EXIT') {
     return row.checkInTime && row.date === todayInAppTimeZone() ? 'OPEN_SESSION' : 'MISSING_EXIT'
   }
@@ -525,14 +527,16 @@ export default function AttendancePage() {
                           <td className="px-5 py-4 font-medium text-slate-900">
                             {new Date(row.date).toLocaleDateString()}
                           </td>
-                          <td className="px-5 py-4 text-slate-800">{formatTime(row.checkInTime)}</td>
+                          <td className="px-5 py-4 text-slate-800"><AttendanceMethodTime
+                            time={row.checkInTime && row.checkInTime.slice(0, 10) !== row.date
+                              ? formatAttendanceDateTime(row.checkInTime) : formatTime(row.checkInTime)} method={row.entryMethod} /></td>
                           <td className="px-5 py-4">
                             {row.checkInTime && !row.checkOutTime ? (
                               <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
                                 Çıxış gözlənilir
                               </span>
                             ) : (
-                              formatTime(row.checkOutTime)
+                              <AttendanceMethodTime time={formatTime(row.checkOutTime)} method={row.exitMethod} />
                             )}
                           </td>
                           <td className="px-5 py-4 font-semibold text-slate-900">

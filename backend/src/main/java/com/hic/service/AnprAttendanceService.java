@@ -78,6 +78,7 @@ public class AnprAttendanceService {
                 WHERE tenant_id = ? AND bridge_device_id = ? AND method = 'ANPR'
                   AND occurred_at BETWEEN ? AND ?
                 """, Long.class, tenant, device, AppTimeZone.toLocalDateTime(start), AppTimeZone.toLocalDateTime(end)));
+        flagLateConfidence(tenant, device, captures, changed);
         var unseen = captures.stream().filter(capture -> !existing.contains(capture.id())).toList();
         var result = persistCamera(tenant, camera, device, periods, unseen, null, null, changed);
         return new CaptureCount(captures.size(), result.skipped());
@@ -87,6 +88,7 @@ public class AnprAttendanceService {
                                List<AnprBridgeClient.Capture> captures, LocalDate archiveStart, LocalDate archiveEnd,
                                Set<WorkDay> changed) {
         boolean historical = archiveStart != null;
+        if (historical) flagLateConfidence(tenant, device, captures, changed);
         int skipped = 0;
         for (var capture : captures) {
             if (capture.capturedAt() == null) {
@@ -94,7 +96,8 @@ public class AnprAttendanceService {
                 continue;
             }
             LocalDateTime time = AppTimeZone.toLocalDateTime(capture.capturedAt());
-            if (!historical && camera.getAttendanceRoleSince() != null && time.isBefore(camera.getAttendanceRoleSince())) {
+            LocalDateTime safeSince = historical ? camera.getAnprArchiveSafeSince() : camera.getAttendanceRoleSince();
+            if (safeSince != null && time.isBefore(safeSince)) {
                 skipped++;
                 continue;
             }
@@ -121,6 +124,20 @@ public class AnprAttendanceService {
             }
         }
         return new CaptureCount(captures.size(), skipped);
+    }
+
+    private void flagLateConfidence(long tenant, long device, List<AnprBridgeClient.Capture> captures,
+                                    Set<WorkDay> changed) {
+        for (var capture : captures) {
+            if (!capture.archived() || capture.confidence() == null || capture.confidence() >= MIN_CONFIDENCE) continue;
+            changed.addAll(jdbc.query("""
+                    UPDATE anpr_attendance_punches SET late_confidence = ?
+                    WHERE tenant_id = ? AND bridge_device_id = ? AND source_id = ? AND method = 'ANPR'
+                      AND rejection IS NULL AND confidence IS NULL AND late_confidence IS NULL
+                    RETURNING area_id, employee_id, work_date
+                    """, (row, index) -> new WorkDay(row.getLong(1), row.getLong(2), row.getObject(3, LocalDate.class)),
+                    capture.confidence(), tenant, device, capture.id()));
+        }
     }
 
     private void restoreRejectedCamera(long tenant, long device, long sourceId, long employee, LocalDate date) {
@@ -237,7 +254,7 @@ public class AnprAttendanceService {
     private List<AttendancePunchSelection.Punch> candidates(long tenant, WorkDay day, boolean sameMethod, LocalDateTime deadline) {
         List<Source> punches = jdbc.query("""
                 SELECT id, bridge_device_id, occurred_at, method, direction FROM anpr_attendance_punches
-                WHERE tenant_id = ? AND area_id = ? AND employee_id = ? AND work_date = ? AND rejection IS NULL
+                WHERE tenant_id = ? AND area_id = ? AND employee_id = ? AND work_date = ? AND rejection IS NULL AND late_confidence IS NULL
                 ORDER BY occurred_at, id
                 """, (row, index) -> new Source(row.getLong(1), row.getLong(2), row.getObject(3, LocalDateTime.class),
                 AttendancePunchSelection.Method.valueOf(row.getString(4)), row.getString(5)),

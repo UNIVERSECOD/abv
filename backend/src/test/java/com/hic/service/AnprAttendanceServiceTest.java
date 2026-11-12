@@ -35,6 +35,21 @@ class AnprAttendanceServiceTest {
             logs, schedules, new AttendanceSessionPolicy(schedules));
 
     @Test
+    void archiveBeforeCameraConfigurationChangeCannotUseCurrentRole() {
+        var camera = new DeviceConfig();
+        camera.setBranchId(7L);
+        camera.setDoorRole("EXIT");
+        camera.setAnprArchiveSafeSince(DAY.atTime(12, 0));
+        var capture = new AnprBridgeClient.Capture(1L, OffsetDateTime.parse("2026-11-10T08:00:00+04:00"),
+                "10AB123", 95, "1", true);
+        var changed = new HashSet<AnprAttendanceService.WorkDay>();
+        assertThat(service.persistCamera(1, camera, 10, List.of(), List.of(capture), DAY, DAY, changed).skipped())
+                .isEqualTo(1);
+        assertThat(changed).isEmpty();
+        verifyNoInteractions(jdbc, vehicles, employees);
+    }
+
+    @Test
     void projectsFirstEntryAndLastExitAcrossCameraAndTerminal() throws Exception {
         employeeWithSchedule("STANDARD", 9, 18);
         sourceRows(

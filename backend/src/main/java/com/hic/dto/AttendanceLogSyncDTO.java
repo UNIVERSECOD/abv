@@ -13,6 +13,7 @@ public class AttendanceLogSyncDTO {
         private Long id;
         private Long deviceId;
         private String employeeNo;
+        private String terminalName;
         private OffsetDateTime punchTime;
         private Long rawEventId;
         private String firstName;

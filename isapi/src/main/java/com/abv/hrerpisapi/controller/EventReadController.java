@@ -36,6 +36,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class EventReadController {
 
+    private static final com.fasterxml.jackson.databind.ObjectMapper EVENT_JSON = new com.fasterxml.jackson.databind.ObjectMapper();
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 500;
 
@@ -104,10 +105,10 @@ public class EventReadController {
             }
         }
 
-        var minorByRawId = new java.util.HashMap<Long, Integer>();
+        var rawById = new java.util.HashMap<Long, AcsRawEventEntity>();
         acsRawEventRepository.findAllById(punches.stream().map(AttendancePunchEntity::getRawEventId)
                 .filter(java.util.Objects::nonNull).distinct().toList())
-                .forEach(event -> minorByRawId.put(event.getId(), event.getSubEventType()));
+                .forEach(event -> rawById.put(event.getId(), event));
         return punches.stream()
                 .map(p -> new PunchResponse(
                         p.getId(),
@@ -115,7 +116,8 @@ public class EventReadController {
                         p.getEmployeeNo(),
                         p.getPunchTime(),
                         p.getRawEventId(),
-                        verificationMethod(minorByRawId.get(p.getRawEventId()))
+                        verificationMethod(rawById.get(p.getRawEventId()) == null ? null : rawById.get(p.getRawEventId()).getSubEventType()),
+                        terminalName(rawById.get(p.getRawEventId()), p)
                 ))
                 .toList();
     }
@@ -357,13 +359,29 @@ public class EventReadController {
         return "ACCESS";
     }
 
+    static String terminalName(AcsRawEventEntity raw, AttendancePunchEntity punch) {
+        if (raw == null || !java.util.Objects.equals(raw.getDeviceId(), punch.getDeviceId())
+                || raw.getRawJson() == null || raw.getRawJson().isBlank()) return null;
+        try {
+            var json = EVENT_JSON.readTree(raw.getRawJson());
+            var event = json.has("AccessControllerEvent") ? json.path("AccessControllerEvent") : json;
+            if (!event.path("employeeNoString").asText("").strip().equals(punch.getEmployeeNo())) return null;
+            var name = event.path("name");
+            return name.isTextual() && name.textValue().length() <= 255 && !name.textValue().isBlank()
+                    ? name.textValue().strip() : null;
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ignored) {
+            return null;
+        }
+    }
+
     public record PunchResponse(
             Long id,
             Long deviceId,
             String employeeNo,
             OffsetDateTime punchTime,
             Long rawEventId,
-            String verificationMethod
+            String verificationMethod,
+            String terminalName
     ) {
     }
 

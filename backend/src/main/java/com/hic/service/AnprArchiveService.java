@@ -28,7 +28,8 @@ public class AnprArchiveService {
     private final AttendanceService summaries;
     private final TransactionTemplate transactions;
 
-    private record Camera(long id, long bridgeId, String role) {}
+    private record Camera(long id, long bridgeId, String role, String endpoint, Integer port,
+                          java.time.LocalDateTime archiveSafeSince) {}
     private record Loaded(Camera camera, int found, List<AnprBridgeClient.Capture> captures) {}
     public record Result(int entryFound, int exitFound, int eligibleDays, int recalculatedDays, int unchangedDays, int skipped) {}
 
@@ -40,8 +41,10 @@ public class AnprArchiveService {
         }
         var cameras = cameras(tenant, area);
         OffsetDateTime start = from.atStartOfDay(AppTimeZone.ZONE).toOffsetDateTime();
-        OffsetDateTime end = to.equals(now.toLocalDate()) ? now
-                : to.plusDays(1).atStartOfDay(AppTimeZone.ZONE).toOffsetDateTime().minusNanos(1000);
+        // The last selected workday can have an exit on the following calendar day.
+        OffsetDateTime lastPossibleExit = to.plusDays(2).atStartOfDay(AppTimeZone.ZONE)
+                .toOffsetDateTime().minusNanos(1000);
+        OffsetDateTime end = lastPossibleExit.isBefore(now) ? lastPossibleExit : now;
         List<Loaded> loaded = new ArrayList<>();
         for (Camera camera : cameras) {
             try {
@@ -83,7 +86,8 @@ public class AnprArchiveService {
         var cameras = devices.findByTenantIdAndBranchId(tenant, area).stream()
                 .filter(device -> device.isAnpr() && "ACTIVE".equalsIgnoreCase(device.getStatus()))
                 .sorted(Comparator.comparing(DeviceConfig::getDoorRole, Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(device -> new Camera(device.getId(), bridgeId(device), device.getDoorRole())).toList();
+                .map(device -> new Camera(device.getId(), bridgeId(device), device.getDoorRole(),
+                        device.getDeviceIp(), device.getDevicePort(), device.getAnprArchiveSafeSince())).toList();
         if (cameras.size() != 2 || !"ENTRY".equals(cameras.get(0).role()) || !"EXIT".equals(cameras.get(1).role())
                 || cameras.get(0).bridgeId() == cameras.get(1).bridgeId()) {
             throw new BadRequestException("Arxiv oxumaq üçün eyni ərazidə bir giriş və bir çıxış ANPR kamerası seçilməlidir.");

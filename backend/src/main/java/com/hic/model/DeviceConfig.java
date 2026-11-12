@@ -51,6 +51,9 @@ public class DeviceConfig {
     @Column(name = "attendance_role_since")
     private LocalDateTime attendanceRoleSince;
 
+    @Column(name = "anpr_archive_safe_since")
+    private LocalDateTime anprArchiveSafeSince;
+
     @Column(name = "status")
     private String status;
 

@@ -186,9 +186,9 @@ public class DoorAttendanceSyncService {
                 continue;
             }
             Long backendDeviceConfigId = punch.getDeviceId() != null
-                    ? backendIdByIsapiId.getOrDefault(punch.getDeviceId(), punch.getDeviceId())
+                    ? backendIdByIsapiId.get(punch.getDeviceId())
                     : null;
-            Employee employee = resolveEmployee(tenantId, backendDeviceConfigId, punch.getEmployeeNo());
+            Employee employee = resolveEmployee(tenantId, backendDeviceConfigId, punch.getEmployeeNo(), punch.getTerminalName());
             if (employee == null) {
                 skippedPunches++;
                 unresolvedEmployeeNos.add(code);
@@ -534,66 +534,49 @@ public class DoorAttendanceSyncService {
         return end == null ? AppTimeZone.nowOffset() : end.atZone(AppTimeZone.ZONE).toOffsetDateTime();
     }
 
-    private Employee resolveEmployee(Long tenantId, Long deviceConfigId, String employeeCode) {
-        String normalizedCode = employeeCode == null ? null : employeeCode.trim();
-        if (normalizedCode == null || normalizedCode.isEmpty()) {
-            return null;
-        }
+    Employee resolveEmployee(Long tenantId, Long deviceConfigId, String employeeCode, String terminalName) {
+        if (deviceConfigId == null || employeeCode == null || employeeCode.isBlank()) return null;
+        String code = employeeCode.strip();
+        String name = comparableName(terminalName);
+        var assigned = employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(deviceConfigId, code).stream()
+                .filter(employee -> tenantId == null || tenantId.equals(employee.getTenantId())).distinct().toList();
+        if (!assigned.isEmpty()) return uniqueWithName(assigned, name);
 
-        if (deviceConfigId != null) {
-            List<Employee> byAccess = employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(
-                    deviceConfigId, normalizedCode);
-            if (byAccess.size() == 1) {
-                return byAccess.get(0);
-            }
-            if (byAccess.size() > 1) {
-                log.warn("Multiple employees match deviceConfigId={} deviceEmployeeNo={}", deviceConfigId, normalizedCode);
-                return byAccess.get(0);
-            }
-
-            DeviceConfig device = deviceConfigRepository.findById(deviceConfigId).orElse(null);
-            if (device != null && device.getBranchId() != null && tenantId != null) {
-                List<Employee> byHomeBranch = employeeRepository.findByTenantIdAndBranchIdAndDeviceEmployeeNoIgnoreCase(
-                        tenantId, device.getBranchId(), normalizedCode);
-                if (byHomeBranch.size() == 1) {
-                    return byHomeBranch.get(0);
-                }
-                if (byHomeBranch.size() > 1) {
-                    return byHomeBranch.get(0);
-                }
-            }
+        var device = deviceConfigRepository.findById(deviceConfigId).orElse(null);
+        if (tenantId != null && device != null && tenantId.equals(device.getTenantId()) && device.getBranchId() != null) {
+            var area = employeeRepository.findByTenantIdAndBranchIdAndDeviceEmployeeNoIgnoreCase(
+                    tenantId, device.getBranchId(), code);
+            if (!area.isEmpty()) return uniqueWithName(area, name);
         }
+        var terminalMatches = tenantId != null
+                ? employeeRepository.findByTenantIdAndDeviceEmployeeNoIgnoreCase(tenantId, code)
+                : employeeRepository.findByDeviceEmployeeNoIgnoreCase(code);
+        if (!terminalMatches.isEmpty()) return uniqueWithName(terminalMatches, name);
 
-        // Legacy / prefixed employeeId exact match (BAK-1001 or raw 1001)
-        Employee byEmployeeCode = tenantId != null
-                ? employeeRepository.findByTenantIdAndEmployeeId(tenantId, normalizedCode)
-                .or(() -> employeeRepository.findByTenantIdAndEmployeeIdIgnoreCase(tenantId, normalizedCode))
-                .orElse(null)
-                : employeeRepository.findByEmployeeId(normalizedCode)
-                .or(() -> employeeRepository.findByEmployeeIdIgnoreCase(normalizedCode))
-                .orElse(null);
-        if (byEmployeeCode != null) {
-            return byEmployeeCode;
-        }
+        // A numeric HR code needs independent corroboration. A database primary key is never a terminal identity.
+        if (name.isEmpty() && code.chars().allMatch(Character::isDigit)) return null;
+        var hrMatch = tenantId != null
+                ? employeeRepository.findByTenantIdAndEmployeeId(tenantId, code)
+                        .or(() -> employeeRepository.findByTenantIdAndEmployeeIdIgnoreCase(tenantId, code))
+                : employeeRepository.findByEmployeeId(code).or(() -> employeeRepository.findByEmployeeIdIgnoreCase(code));
+        return uniqueWithName(hrMatch.stream().toList(), name);
+    }
 
-        List<Employee> byDeviceNo = tenantId != null
-                ? employeeRepository.findByTenantIdAndDeviceEmployeeNoIgnoreCase(tenantId, normalizedCode)
-                : employeeRepository.findByDeviceEmployeeNoIgnoreCase(normalizedCode);
-        if (byDeviceNo.size() == 1) {
-            return byDeviceNo.get(0);
-        }
+    private static Employee uniqueWithName(List<Employee> candidates, String name) {
+        var matches = name.isEmpty() ? candidates : candidates.stream().filter(employee -> {
+            String first = comparableName(employee.getFirstName());
+            String last = comparableName(employee.getLastName());
+            if (first.isEmpty() || last.isEmpty()) return false;
+            String patronymic = comparableName(employee.getFatherName());
+            return name.equals(first + " " + last) || name.equals(last + " " + first)
+                    || (!patronymic.isEmpty() && name.equals(last + " " + first + " " + patronymic));
+        }).toList();
+        return matches.size() == 1 ? matches.get(0) : null;
+    }
 
-        if (normalizedCode.chars().allMatch(Character::isDigit)) {
-            try {
-                Long employeePk = Long.parseLong(normalizedCode);
-                return tenantId != null
-                        ? employeeRepository.findByTenantIdAndId(tenantId, employeePk).orElse(null)
-                        : employeeRepository.findById(employeePk).orElse(null);
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
+    private static String comparableName(String value) {
+        return value == null ? "" : java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKC)
+                .strip().replaceAll("(?U)\\s+", " ").toLowerCase(java.util.Locale.forLanguageTag("az"));
     }
 
     private int countPunchesForEmployeeCode(List<AttendanceLogSyncDTO.AttendanceLogEntryDTO> punches, String employeeCode) {

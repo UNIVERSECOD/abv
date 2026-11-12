@@ -14,6 +14,7 @@ const results: Record<string, string> = {
   OUTSIDE_ACTIVATION: 'Aktiv dövrdən kənar',
   UNREADABLE_PLATE: 'Nömrə oxunmayıb',
   LOW_CONFIDENCE: 'Oxuma etibarı aşağıdır',
+  LATE_CONFIDENCE_CONFLICT: 'Sonradan aşağı etibar balı gəldi — davamiyyəti yoxlayın',
   UNASSIGNED_PLATE: 'Aktiv əməkdaşa təyin edilməyib',
 }
 

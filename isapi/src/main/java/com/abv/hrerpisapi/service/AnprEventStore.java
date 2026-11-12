@@ -24,13 +24,29 @@ public class AnprEventStore {
     public record Capture(long id, OffsetDateTime capturedAt, String plate, Integer confidence, String channel,
                           boolean archived) {}
 
+    @Transactional
     public boolean capture(long deviceId, String xml) throws XMLStreamException {
         var event = mapper.map(xml);
         if (event == null) return false;
-        jdbc.update("""
-                INSERT INTO anpr_events (device_id, event_key, captured_at, plate, confidence, channel, raw_xml)
-                VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (device_id, event_key) DO NOTHING
-                """, deviceId, eventKey(event), event.capturedAt(), event.plate(), event.confidence(), event.channel(), xml);
+        lockDevice(deviceId);
+        String key = eventKey(event);
+        var existingLive = jdbc.queryForList("""
+                SELECT id FROM anpr_events WHERE device_id = ? AND (event_key = ? OR live_event_key = ?)
+                """, Long.class, deviceId, key, key);
+        if (!existingLive.isEmpty()) return true;
+
+        var archive = matching(deviceId, event.capturedAt(), event.plate(), event.channel(), true);
+        if (archive.size() == 1) {
+            jdbc.update("""
+                    UPDATE anpr_events SET live_event_key = ?, live_raw_xml = ?, confidence = ?
+                    WHERE id = ? AND device_id = ?
+                    """, key, xml, event.confidence(), archive.get(0), deviceId);
+        } else {
+            jdbc.update("""
+                    INSERT INTO anpr_events (device_id, event_key, captured_at, plate, confidence, channel, raw_xml)
+                    VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (device_id, event_key) DO NOTHING
+                    """, deviceId, key, event.capturedAt(), event.plate(), event.confidence(), event.channel(), xml);
+        }
         return true;
     }
 
@@ -47,23 +63,48 @@ public class AnprEventStore {
 
     @Transactional
     public int storeArchive(long deviceId, List<AnprArchiveSearch.Capture> captures) {
+        if (captures.isEmpty()) return 0;
+        lockDevice(deviceId);
         int inserted = 0;
         for (var capture : captures) {
-            String plateKey = capture.plate() == null ? ""
-                    : capture.plate().toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "");
+            String plateKey = plateKey(capture.plate());
             String key = digest("archive\n" + capture.time().toInstant() + "\n" + plateKey);
+            var live = matching(deviceId, capture.time(), capture.plate(), capture.channel(), false);
+            if (live.size() == 1) {
+                jdbc.update("""
+                        UPDATE anpr_events SET archived = true, archive_raw_xml = COALESCE(archive_raw_xml, ?)
+                        WHERE id = ? AND device_id = ? AND live_raw_xml IS NULL
+                        """, capture.xml(), live.get(0), deviceId);
+                continue;
+            }
             inserted += jdbc.update("""
                     INSERT INTO anpr_events (device_id, event_key, captured_at, plate, channel, raw_xml, archived)
-                    SELECT ?, ?, ?, ?, ?, ?, true
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM anpr_events WHERE device_id = ? AND captured_at = ?
-                            AND regexp_replace(upper(coalesce(plate, '')), '[^A-Z0-9]', '', 'g') = ?
-                    )
+                    VALUES (?, ?, ?, ?, ?, ?, true)
                     ON CONFLICT (device_id, event_key) DO NOTHING
-                    """, deviceId, key, capture.time(), capture.plate(), capture.channel(), capture.xml(),
-                    deviceId, capture.time(), plateKey);
+                    """, deviceId, key, capture.time(), capture.plate(), capture.channel(), capture.xml());
         }
         return inserted;
+    }
+
+    private List<Long> matching(long deviceId, OffsetDateTime time, String plate, String channel, boolean archiveOnly) {
+        String normalized = plateKey(plate);
+        if (normalized.isEmpty()) return List.of();
+        return jdbc.queryForList("""
+                SELECT id FROM anpr_events
+                WHERE device_id = ? AND captured_at = ?
+                  AND regexp_replace(upper(coalesce(plate, '')), '[[:space:]-]+', '', 'g') = ?
+                  AND (channel IS NULL OR CAST(? AS TEXT) IS NULL OR channel = ?)
+                  AND (? = (archived AND archive_raw_xml IS NULL AND live_event_key IS NULL))
+                ORDER BY id LIMIT 2
+                """, Long.class, deviceId, time, normalized, (Object) channel, channel, archiveOnly);
+    }
+
+    private void lockDevice(long deviceId) {
+        jdbc.queryForObject("SELECT id FROM devices WHERE id = ? FOR NO KEY UPDATE", Long.class, deviceId);
+    }
+
+    private static String plateKey(String value) {
+        return value == null ? "" : value.toUpperCase(java.util.Locale.ROOT).replaceAll("[\\s-]+", "");
     }
 
     private static String eventKey(AnprEventMapper.Event event) {

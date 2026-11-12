@@ -450,6 +450,29 @@ class DoorAttendanceSyncServiceTest {
         return device;
     }
 
+    @Test
+    void matchingDeviceNumberRequiresUniqueCandidateAndUsesOnlyTerminalName() {
+        var first = employee(5L, "123");
+        first.setFirstName("Əli");
+        first.setLastName("Həsənov");
+        var second = employee(6L, "123");
+        second.setFirstName("İlqar");
+        second.setLastName("Məmmədov");
+        when(employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(10L, "123")).thenReturn(List.of(first, second));
+
+        assertThat(doorAttendanceSyncService.resolveEmployee(1L, 10L, "123", null)).isNull();
+        assertThat(doorAttendanceSyncService.resolveEmployee(1L, 10L, "123", "  İLQAR   MƏMMƏDOV ")).isSameAs(second);
+        assertThat(doorAttendanceSyncService.resolveEmployee(1L, 10L, "123", "Başqa Adam")).isNull();
+    }
+
+    @Test
+    void unknownTerminalNumberCannotBecomeAnEmployeePrimaryKey() {
+        assertThat(doorAttendanceSyncService.resolveEmployee(1L, 10L, "123", null)).isNull();
+        assertThat(doorAttendanceSyncService.resolveEmployee(1L, null, "123", "Sınaq Adam")).isNull();
+        verify(employeeRepository, never()).findByTenantIdAndId(any(), any());
+        verify(employeeRepository, never()).findByTenantIdAndEmployeeId(any(), any());
+    }
+
     private static Employee employee(Long id, String deviceEmployeeNo) {
         Employee employee = new Employee();
         employee.setId(id);

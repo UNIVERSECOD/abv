@@ -61,10 +61,11 @@ public class TransportReportController {
             parameters.addValue("plate", plate.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", ""));
         }
         var rows = jdbc.query("""
-                SELECT p.id, p.plate, p.occurred_at, p.direction, p.confidence, p.employee_id,
+                SELECT p.id, p.plate, p.occurred_at, p.direction, COALESCE(p.late_confidence, p.confidence), p.employee_id,
                     CASE WHEN e.id IS NOT NULL THEN concat_ws(' ', e.first_name, e.last_name) END AS employee_name,
                     b.name AS area, p.device_name,
-                    CASE WHEN p.rejection IS NOT NULL THEN p.rejection
+                    CASE WHEN p.late_confidence IS NOT NULL THEN 'LATE_CONFIDENCE_CONFLICT'
+                         WHEN p.rejection IS NOT NULL THEN p.rejection
                          WHEN p.id IN (a.anpr_entry_id, a.anpr_exit_id) THEN 'SELECTED'
                          WHEN a.id IS NULL OR (p.direction = 'EXIT' AND a.check_out_time IS NULL) THEN 'UNMATCHED'
                          ELSE 'NOT_SELECTED' END AS result

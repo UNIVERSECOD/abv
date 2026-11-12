@@ -25,6 +25,12 @@ POST sorğuları axtarışdır. Diaqnostika PUT/DELETE, sınaq nömrəsi, toplu 
 
 Boş arxiv axtarışı sorğunun işlədiyini göstərir, oktyabr qeydlərinin mövcudluğunu göstərmir. Tarix aralığından kənar nəticə və ya nömrə sahəsi olmayan nümunə təsdiqlənmiş ANPR arxivi sayılmır. Əvvəlki avtomatik arxiv sinxronizasiyası ayrıca işləyir; onun səhifələri bu bir qeydlik diaqnostikadan müstəqildir.
 
+## Arxiv və davamiyyət
+
+Arxivdə seçilən tarixlər iş günləridir. Son iş gününün gecə növbəsi üçün kamera sorğusu ertəsi təqvim gününü də oxuyur və ABV yalnız seçilən iş günlərinə aid nəticələri tətbiq edir. Kamera rolu və ya ünvanı dəyişəndən sonra həmin dəyişiklikdən əvvəlki keçidlər cari rolla avtomatik hesablanmır. Xam kamera qeydləri saxlanılır.
+
+Kamera bildirdiyi səhifə və ümumi say faktiki nəticələrlə uyğun gəlməlidir. Canlı və arxiv keçidinin kamera, vaxt, nömrə və kanal üzrə birmənalı uyğunluğu tapılanda hər iki xam mənbə bir hadisəyə bağlanır. Canlı oxuma balı 80-dən aşağıdırsa yeni keçid davamiyyətə daxil edilmir. Bal yalnız əvvəldən qəbul edilmiş arxiv keçidindən sonra gəlibsə Nəqliyyat hesabatı onu yoxlama üçün işarələyir və avtomatik hesablamada həmin keçid artıq seçilmir. Etibarlı giriş qalmadıqda mövcud sessiya saxlanılır və əl ilə yoxlanmalıdır.
+
 ## Yoxlama
 
 2026-11-11: 666 backend, 69 ISAPI Maven, ISAPI Gradle və 70 frontend testi keçdi; frontend lint/build, backend/ISAPI package, Docker image build-ləri və Compose config keçdi. Mock HTTP testində Digest-in tam request target-i, yalnız oxuma sorğuları və bir qeydlik limit yoxlandı. Tenant, bridge scope, IP/port və ad uyğunsuzluğu yoxlandı. Brauzerdə avtomatik açılış, dəstəklənməyən imkan, uğursuzluqdan sonra təkrar yoxlama, mobil görünüş və üztanıma cihazının əlavə edilməsi yoxlandı. Ayrı Docker mühitində mövcud mock nömrə qeydləri dəyişmədi, kamera yazmalarının sayı sıfır qaldı. Fiziki kamera/firmware və production serverində yerləşdirmə bu yoxlamaya daxil deyil.

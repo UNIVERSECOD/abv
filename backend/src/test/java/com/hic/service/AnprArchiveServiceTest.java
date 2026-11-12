@@ -35,6 +35,24 @@ class AnprArchiveServiceTest {
         verifyNoInteractions(transactions, attendance);
     }
 
+    @Test
+    void singleHistoricalWorkdayReadsFollowingCalendarDayForOvernightExit() {
+        var devices = mock(DeviceConfigRepository.class);
+        var bridge = mock(AnprBridgeClient.class);
+        var transactions = mock(TransactionTemplate.class);
+        when(devices.findByTenantIdAndBranchId(1L, 4L))
+                .thenReturn(List.of(camera(11, 21, "ENTRY"), camera(12, 22, "EXIT")));
+        when(bridge.fetchArchive(anyLong(), any(), any())).thenReturn(new AnprBridgeClient.ArchiveResult(0, 0));
+        when(bridge.captures(anyLong(), any(), any())).thenReturn(List.of());
+        when(transactions.execute(any())).thenReturn(new AnprArchiveService.Result(0, 0, 0, 0, 0, 0));
+        var service = new AnprArchiveService(devices, bridge, mock(AnprAttendanceService.class),
+                mock(AttendanceCalculationService.class), mock(AttendanceService.class), transactions);
+        var day = AppTimeZone.today().minusDays(4);
+        service.readAndApply(1, 4, day, day);
+        verify(bridge).fetchArchive(eq(22L), eq(day.atStartOfDay(AppTimeZone.ZONE).toOffsetDateTime()),
+                argThat(end -> end.toLocalDate().equals(day.plusDays(1)) && end.getHour() == 23));
+    }
+
     private DeviceConfig camera(long id, long bridge, String role) {
         var camera = new DeviceConfig();
         camera.setId(id);

@@ -28,7 +28,7 @@ public final class AnprArchiveSearch {
     private AnprArchiveSearch() {}
 
     public record Capture(OffsetDateTime time, String plate, String channel, String xml) {}
-    record Page(List<Capture> captures, boolean more, int records) {}
+    record Page(List<Capture> captures, boolean more, int records, Integer total) {}
     static final class UnsupportedSearch extends IOException {
         UnsupportedSearch() { super("Camera does not support this archive search"); }
     }
@@ -55,6 +55,7 @@ public final class AnprArchiveSearch {
         var searchId = UUID.randomUUID();
         int offset = 0;
         int found = 0;
+        Integer expectedTotal = null;
         List<Capture> previous = null;
         for (int page = 0; page < MAX_PAGES; page++) {
             Page parsed;
@@ -66,6 +67,18 @@ public final class AnprArchiveSearch {
             }
             if (parsed.records() > 0 && parsed.captures().equals(previous)) {
                 throw new IOException("Camera repeated an ANPR archive page");
+            }
+            if (parsed.total() != null) {
+                if (expectedTotal != null && !expectedTotal.equals(parsed.total())) {
+                    throw new IOException("ANPR archive total changed during pagination");
+                }
+                expectedTotal = parsed.total();
+            }
+            if (expectedTotal != null) {
+                long received = (long) offset + parsed.records();
+                if (received > expectedTotal || (parsed.more() ? received >= expectedTotal : received != expectedTotal)) {
+                    throw new IOException("ANPR archive response ended with an inconsistent total");
+                }
             }
             previous = parsed.captures();
             var captures = parsed.captures().stream()
@@ -127,7 +140,9 @@ public final class AnprArchiveSearch {
                 throw new IOException("Camera rejected the ANPR archive search");
             }
             var rows = root.getElementsByTagNameNS("*", vehicleSearch ? "VehicleMode" : "searchMatchItem");
-            if (rows.getLength() > 500 || ("NO MATCHES".equals(status) && rows.getLength() > 0)) {
+            String reported = value(root, "numOfMatches");
+            if ((!reported.isEmpty() && Integer.parseInt(reported) != rows.getLength())
+                    || rows.getLength() > 500 || ("NO MATCHES".equals(status) && rows.getLength() > 0)) {
                 throw new IOException("ANPR archive response has an invalid page size");
             }
             var result = new ArrayList<Capture>();
@@ -144,7 +159,10 @@ public final class AnprArchiveSearch {
                 result.add(new Capture(OffsetDateTime.parse(time), plate.isBlank() ? null : plate, "1",
                         serialize(item, transformer)));
             }
-            return new Page(result, "MORE".equals(status), rows.getLength());
+            String totalField = value(root, "totalMatches");
+            Integer total = totalField.isEmpty() ? null : Integer.valueOf(totalField);
+            if (total != null && total < 0) throw new IOException("Invalid ANPR archive total");
+            return new Page(result, "MORE".equals(status), rows.getLength(), total);
         } catch (IOException ex) {
             throw ex;
         } catch (Exception ex) {

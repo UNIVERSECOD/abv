@@ -276,6 +276,9 @@ public final class IsapiAlertStreamRunner implements Runnable {
                 }
             }
         } catch (EOFException eof) {
+            if (isStopRequested()) {
+                throw new AlertStreamStoppedException("stream closed due to stop request");
+            }
             CurlProcessEndDetails processEndDetails = captureCurlProcessEndDetails(
                     p,
                     error,
@@ -493,7 +496,7 @@ public final class IsapiAlertStreamRunner implements Runnable {
                                                               String username,
                                                               String password) {
         if (process == null) {
-            return new CurlProcessEndDetails("-", "-");
+            return NO_CURL_DETAILS;
         }
         String exitCode = "-";
         try {
@@ -578,6 +581,8 @@ public final class IsapiAlertStreamRunner implements Runnable {
                     || "deployExceedMax".equalsIgnoreCase(safe(message));
         }
     }
+
+    private static final CurlProcessEndDetails NO_CURL_DETAILS = new CurlProcessEndDetails("-", "-");
 
     record CurlProcessEndDetails(String exitCode, String stderrTail) {
     }

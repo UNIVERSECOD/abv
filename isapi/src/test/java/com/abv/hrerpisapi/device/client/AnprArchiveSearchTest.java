@@ -94,6 +94,15 @@ class AnprArchiveSearchTest {
         assertThat(page.captures().get(0).plate()).isEqualTo("10-AB-123");
     }
 
+    @Test
+    void rejectsSuccessfulResponseWhenReportedCountDoesNotMatchRows() {
+        UUID id = UUID.randomUUID();
+        String response = response(id.toString(), "OK", "10AB123").replace("<matchList>",
+                "<numOfMatches>2</numOfMatches><matchList>");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> AnprArchiveSearch.parse(response, id))
+                .isInstanceOf(java.io.IOException.class);
+    }
+
     private String response(String id, String status, String plate) {
         return """
                 <CMSearchResult xmlns="http://www.isapi.org/ver20/XMLSchema">

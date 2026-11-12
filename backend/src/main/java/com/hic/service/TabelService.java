@@ -174,7 +174,9 @@ public class TabelService {
                 LocalDate date = yearMonth.atDay(day);
                 Object value;
                 var schedule = scheduleForTabel(employee, date);
-                if (schedule.workingDay()) {
+                boolean employedOnDate = (employee.getHireDate() == null || !date.isBefore(employee.getHireDate()))
+                        && (employee.getTerminationDate() == null || date.isBefore(employee.getTerminationDate()));
+                if (employedOnDate && schedule.workingDay()) {
                     normWorkingDays++;
                     normMinutes += schedule.expectedMinutes();
                     representativeExpectedMinutes = Math.max(representativeExpectedMinutes, schedule.expectedMinutes());

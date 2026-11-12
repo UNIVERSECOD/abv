@@ -96,10 +96,14 @@ public class DeviceController {
                 req.getBranchId(), req.getDoorRole(), req.getIp(), backendDevice) : null;
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateDevice(
                 toIsapiId(backendDevice.getDeviceId()), dto);
+        boolean cameraChanged = role != null && (!role.equals(backendDevice.getDoorRole())
+                || !java.util.Objects.equals(backendDevice.getDeviceIp(), isapiResult.getDeviceIp()));
         updateBackendDevice(backendDevice, isapiResult, req.getBranchId(), req.getPassword());
-        if (role != null && !role.equals(backendDevice.getDoorRole())) {
+        if (cameraChanged) {
+            var changedAt = com.hic.util.AppTimeZone.now();
             backendDevice.setDoorRole(role);
-            backendDevice.setAttendanceRoleSince(com.hic.util.AppTimeZone.now());
+            backendDevice.setAttendanceRoleSince(changedAt);
+            backendDevice.setAnprArchiveSafeSince(changedAt);
         }
         reconcileAnprPair(backendDevice);
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(id)));

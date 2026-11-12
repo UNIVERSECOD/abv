@@ -189,6 +189,7 @@ public class AttendanceLogSyncService {
                             doorRole
                     );
                     punch.setVerificationMethod(response.getVerificationMethod());
+                    punch.setTerminalName(response.getTerminalName());
                     return punch;
                 })
                 .toList();
@@ -307,5 +308,6 @@ public class AttendanceLogSyncService {
         private OffsetDateTime punchTime;
         private Long rawEventId;
         private String verificationMethod;
+        private String terminalName;
     }
 }

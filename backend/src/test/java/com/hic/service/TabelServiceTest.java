@@ -119,6 +119,7 @@ class TabelServiceTest {
         employee.setId(11L); employee.setTenantId(7L); employee.setEmployeeId("ABV-11");
         employee.setFirstName("Ayla"); employee.setLastName("Aliyeva");
         employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
+        employee.setHireDate(LocalDate.of(2026, 4, 5));
         employee.setTerminationDate(LocalDate.of(2026, 4, 10));
         when(employeeRepository.findByTenantId(7L, Pageable.unpaged()))
                 .thenReturn(new PageImpl<>(List.of(employee)));
@@ -127,6 +128,9 @@ class TabelServiceTest {
                         LocalTime.of(8, 0), LocalTime.of(17, 0), 60, 0, 0));
 
         var row = tabelService.getMonthlyTabel(2026, 4, null, null, null, null).getRows().get(0);
+        assertEquals("i/qəbul", row.getDaily().get(4));
+        assertEquals(5, row.getNormWorkingDays());
+        assertEquals(40.0, row.getNormHours());
         assertEquals("i/azad", row.getDaily().get(10));
         assertEquals("i/azad", row.getDaily().get(30));
         assertEquals(0, row.getWorkingDays());

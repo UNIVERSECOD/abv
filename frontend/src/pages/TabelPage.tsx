@@ -124,8 +124,8 @@ export default function TabelPage() {
 
   return (
     <Layout>
-      <div className="p-6 lg:p-8">
-        <div className="flex flex-col gap-4 lg:flex-row">
+      <div className="p-6 lg:h-full lg:p-8">
+        <div className="flex flex-col gap-4 lg:h-full lg:flex-row">
           {/* Collapsible sidebar */}
           <div className={`flex-shrink-0 transition-all duration-200 ${sidebarOpen ? SIDEBAR_OPEN : SIDEBAR_CLOSED}`}>
             {sidebarOpen ? (
@@ -186,8 +186,8 @@ export default function TabelPage() {
           </div>
 
           {/* Main content */}
-          <section className="flex-1 min-w-0 space-y-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <section className="flex-1 min-w-0 space-y-4 lg:flex lg:min-h-0 lg:flex-col">
+            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
                 <p className="mt-1 text-sm text-slate-500">İşlənmiş vaxt tam saata yuvarlaqlaşdırılır: 00–30 dəqiqə aşağı, 31–59 dəqiqə yuxarı (07:20 → 7, 07:31 → 8). Aylıq cəm gündəlik yuvarlaq saatların cəmidir.</p>
@@ -197,7 +197,7 @@ export default function TabelPage() {
               </button>
             </div>
 
-            <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid shrink-0 gap-3 rounded-2xl bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -231,23 +231,24 @@ export default function TabelPage() {
               </select>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+            <div role="region" aria-label="Tabel cədvəli" tabIndex={0}
+              className="min-h-[10rem] max-h-[min(65dvh,44rem)] overflow-auto lg:max-h-full rounded-2xl bg-white shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500">
               <table className="min-w-max border-collapse text-sm">
-                <thead>
+                <thead className="sticky top-0 z-30 bg-slate-50">
                   <tr className="bg-slate-50 text-xs uppercase text-slate-500">
-                    <th className="sticky left-0 z-30 min-w-[50px] max-w-[50px] border-b bg-slate-50 px-3 py-3 text-left truncate">s/s</th>
-                    <th className="sticky left-[50px] z-30 min-w-[110px] max-w-[110px] border-b bg-slate-50 px-3 py-3 text-left truncate">Sicil No</th>
-                    <th className="sticky left-[160px] z-30 min-w-[200px] max-w-[200px] border-b bg-slate-50 px-3 py-3 text-left truncate">Adı, soyadı, ata adı</th>
-                    <th className="sticky left-[360px] z-30 min-w-[140px] max-w-[140px] border-b bg-slate-50 px-3 py-3 text-left truncate">Vəzifəsi</th>
+                    <th className="xl:sticky xl:left-0 xl:z-30 min-w-[50px] max-w-[50px] border-b bg-slate-50 px-3 py-3 text-left truncate">s/s</th>
+                    <th className="xl:sticky xl:left-[50px] xl:z-30 min-w-[110px] max-w-[110px] border-b bg-slate-50 px-3 py-3 text-left truncate">Sicil No</th>
+                    <th className="xl:sticky xl:left-[160px] xl:z-30 min-w-[200px] max-w-[200px] border-b bg-slate-50 px-3 py-3 text-left truncate">Adı, soyadı, ata adı</th>
+                    <th className="xl:sticky xl:left-[360px] xl:z-30 min-w-[140px] max-w-[140px] border-b bg-slate-50 px-3 py-3 text-left truncate">Vəzifəsi</th>
                     <th className="min-w-[110px] border-b bg-slate-50 px-3 py-3 text-left">FİN</th>
                     <th className="min-w-[130px] border-b bg-slate-50 px-3 py-3 text-left">İş yeri</th>
                     <th className="min-w-[140px] border-b bg-slate-50 px-3 py-3 text-left">İş vaxtı</th>
                     <th className="min-w-[140px] border-b bg-slate-50 px-3 py-3 text-left">İş qrafiki</th>
                     {Array.from({ length: data?.daysInMonth ?? 0 }, (_, day) => (
-                      <th key={day + 1} className="sticky top-0 min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
+                      <th key={day + 1} className="min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
                     ))}
                     {['Aydakı iş günləri norması', 'Saatlıq norma', 'İşlədiyi gün', 'İşlədiyi saat', 'Əlavə iş günü', 'Toplam işlədiyi', 'Məzuniyyət', 'İstirahət və bayram günləri', 'Ezamiyyə', 'Xəstəlik'].map((label) => (
-                      <th key={label} className="sticky top-0 min-w-[110px] border-b bg-slate-50 px-3 py-3 text-center normal-case">{label}</th>
+                      <th key={label} className="min-w-[110px] border-b bg-slate-50 px-3 py-3 text-center normal-case">{label}</th>
                     ))}
                   </tr>
                 </thead>
@@ -258,15 +259,15 @@ export default function TabelPage() {
                     <tr><td colSpan={(data?.daysInMonth ?? 0) + 18} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
                   ) : data?.rows.map((row, index) => (
                     <tr key={row.employeePk} className="border-b border-slate-100 text-slate-700">
-                      <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
-                      <td className="sticky left-[50px] z-20 bg-white px-3 py-2 min-w-[110px] max-w-[110px] truncate" title={row.employeeCode ?? '-'}>{row.employeeCode ?? '-'}</td>
+                      <td className="xl:sticky xl:left-0 xl:z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
+                      <td className="xl:sticky xl:left-[50px] xl:z-20 bg-white px-3 py-2 min-w-[110px] max-w-[110px] truncate" title={row.employeeCode ?? '-'}>{row.employeeCode ?? '-'}</td>
                       <td
-                        className={`sticky left-[160px] z-20 bg-white px-3 py-2 min-w-[200px] max-w-[200px] truncate ${row.employmentStatus === 'TERMINATED' ? 'font-semibold text-red-600' : ''}`}
+                        className={`xl:sticky xl:left-[160px] xl:z-20 bg-white px-3 py-2 min-w-[200px] max-w-[200px] truncate ${row.employmentStatus === 'TERMINATED' ? 'font-semibold text-red-600' : ''}`}
                         title={row.fullName}
                       >
                         {row.fullName}
                       </td>
-                      <td className="sticky left-[360px] z-20 bg-white px-3 py-2 min-w-[140px] max-w-[140px] truncate" title={row.position}>{row.position}</td>
+                      <td className="xl:sticky xl:left-[360px] xl:z-20 bg-white px-3 py-2 min-w-[140px] max-w-[140px] truncate" title={row.position}>{row.position}</td>
                       <td className="px-3 py-2">{row.fin ?? '-'}</td>
                       <td className="px-3 py-2">{row.areaName}</td>
                       <td className="px-3 py-2">{row.workTime}</td>
@@ -286,7 +287,7 @@ export default function TabelPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex flex-wrap gap-4 border-t p-4 text-sm text-slate-600">
+            <div className="flex shrink-0 flex-wrap gap-4 border-t p-4 text-sm text-slate-600">
               {Object.entries(data?.leaveLegend ?? {}).map(([code, name]) => <span key={code}><strong>{code}</strong> — {name}</span>)}
             </div>
           </section>

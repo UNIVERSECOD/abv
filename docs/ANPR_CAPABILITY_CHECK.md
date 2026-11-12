@@ -29,7 +29,7 @@ Boş arxiv axtarışı sorğunun işlədiyini göstərir, oktyabr qeydlərinin m
 
 Arxivdə seçilən tarixlər iş günləridir. Son iş gününün gecə növbəsi üçün kamera sorğusu ertəsi təqvim gününü də oxuyur və ABV yalnız seçilən iş günlərinə aid nəticələri tətbiq edir. Kamera rolu və ya ünvanı dəyişəndən sonra həmin dəyişiklikdən əvvəlki keçidlər cari rolla avtomatik hesablanmır. Xam kamera qeydləri saxlanılır.
 
-Kamera bildirdiyi səhifə və ümumi say faktiki nəticələrlə uyğun gəlməlidir. Canlı və arxiv keçidinin kamera, vaxt, nömrə və kanal üzrə birmənalı uyğunluğu tapılanda hər iki xam mənbə bir hadisəyə bağlanır. Canlı oxuma balı 80-dən aşağıdırsa yeni keçid davamiyyətə daxil edilmir. Bal yalnız əvvəldən qəbul edilmiş arxiv keçidindən sonra gəlibsə Nəqliyyat hesabatı onu yoxlama üçün işarələyir və avtomatik hesablamada həmin keçid artıq seçilmir. Etibarlı giriş qalmadıqda mövcud sessiya saxlanılır və əl ilə yoxlanmalıdır.
+Kamera bildirdiyi səhifə və ümumi say faktiki nəticələrlə uyğun gəlməlidir. Canlı və arxiv keçidi birmənalı uyğun gələndə bir hadisəyə bağlanır. Davamiyyət üçün hadisənin vaxtında şirkət daxilində həmin nömrənin təyin olunduğu əməkdaş seçilir. Giriş və çıxışı kameranın rolu müəyyən edir. Oxuma balı yalnız məlumat kimi saxlanılır. Eyni nömrə eyni şirkətdə iki əməkdaşa eyni vaxtda təyin edilə bilməz.
 
 ## Yoxlama
 

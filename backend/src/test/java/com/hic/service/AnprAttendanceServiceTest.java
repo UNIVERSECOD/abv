@@ -134,18 +134,20 @@ class AnprAttendanceServiceTest {
         verifyNoInteractions(jdbc);
     }
 
-    @Test
-    void captureResolvesPlateAtEventTimeAndDoesNotReprojectDuplicate() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.ValueSource(ints = {55, 98})
+    void captureResolvesPlateAtEventTimeAndDoesNotReprojectDuplicate(Integer confidence) {
         var employee = employeeWithSchedule("STANDARD", 9, 18);
         var camera = new DeviceConfig();
         camera.setBranchId(7L);
         camera.setDoorRole("ENTRY");
         var time = OffsetDateTime.parse("2026-11-10T08:45:00+04:00");
         when(bridge.captures(102, time.minusHours(1), time.plusHours(1)))
-                .thenReturn(List.of(new AnprBridgeClient.Capture(8, time, "10-AB-123", 98, "1")));
+                .thenReturn(List.of(new AnprBridgeClient.Capture(8, time, "10-AB-123", confidence, "1")));
         when(vehicles.ownerAt(1, "10AB123", time.toLocalDateTime())).thenReturn(employee.getId());
         when(jdbc.update(anyString(), eq(1L), eq(7L), eq(11L), eq(DAY), eq(102L), isNull(),
-                eq(8L), eq("ANPR"), eq("ENTRY"), eq(time.toLocalDateTime()), eq("10-AB-123"), eq(98), isNull()))
+                eq(8L), eq("ANPR"), eq("ENTRY"), eq(time.toLocalDateTime()), eq("10-AB-123"), eq(confidence), isNull()))
                 .thenReturn(1, 0);
         var changed = new HashSet<AnprAttendanceService.WorkDay>();
         var periods = List.of(new AnprAreaConfiguration.Period(DAY, null));

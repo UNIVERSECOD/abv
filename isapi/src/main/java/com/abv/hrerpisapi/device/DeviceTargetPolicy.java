@@ -13,20 +13,25 @@ import java.util.stream.Collectors;
 public class DeviceTargetPolicy {
     private final DeviceRepository devices;
     private final Set<String> configured;
+    private final Set<IpNetwork> configuredNetworks;
     private final boolean legacyRegistrationAllowed;
 
-    public DeviceTargetPolicy(DeviceRepository devices, @Value("${isapi.allowed-targets:}") String allowed) {
+    public DeviceTargetPolicy(DeviceRepository devices, @Value("${isapi.allowed-targets:}") String allowed,
+            @Value("${isapi.allowed-networks:}") String networks) {
         this.devices = devices;
-        legacyRegistrationAllowed = allowed.isBlank();
+        legacyRegistrationAllowed = allowed.isBlank() && networks.isBlank();
         configured = Arrays.stream(allowed.split(",")).map(String::trim).filter(s -> !s.isEmpty())
                 .map(DeviceAddress::normalize).collect(Collectors.toUnmodifiableSet());
+        configuredNetworks = Arrays.stream(networks.split(",")).map(String::trim).filter(s -> !s.isEmpty())
+                .map(IpNetwork::parse).collect(Collectors.toUnmodifiableSet());
     }
 
     public void requireAllowed(String address) {
         String normalized;
         try { normalized = DeviceAddress.normalize(address); }
         catch (IllegalArgumentException e) { throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage()); }
-        if (configured.contains(normalized)) return;
+        if (configured.contains(normalized)
+                || configuredNetworks.stream().anyMatch(network -> network.containsEndpoint(normalized))) return;
         // Preserve existing installations. New endpoints require host configuration.
         boolean registered = legacyRegistrationAllowed && devices.findAll().stream()
                 .anyMatch(device -> matches(normalized, device.getIp()));

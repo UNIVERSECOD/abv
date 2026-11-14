@@ -1,5 +1,7 @@
 # ABV variant (2026-10-29)
 
+2026-11-14 device network allowlist: backend now accepts tenant/area-scoped CIDRs through `DEVICES_ALLOWED_NETWORKS`, and ISAPI accepts matching global CIDRs through `ISAPI_ALLOWED_NETWORKS`. Exact endpoint allowlists and the empty-config legacy behavior remain compatible; once either allowlist is configured, unmatched endpoints fail closed. Literal-IP, port, loopback, link-local and multicast validation remains in force. Compose and `.env.example` expose both variables. No migration, stored-device rewrite or physical-device call.
+
 Device-import resolve planning (2026-11-01): user requested preserving the proposed confirmation flow, and explicitly deferred implementation. Read [the device-import resolve skill](../skills/attendra-device-import-resolve/SKILL.md) before continuing this topic. It records current duplicate-ID behavior, the merge/separate/defer proposal and the required device-scoped identity design. No resolve feature has been implemented.
 
 2026-11-01 branding update: visible application name is Attendra; removed ABV from browser title, shared brand, Tabel heading, export toast and download filename. Internal repository/image/Compose identifiers remain abv. Standard rounded-hours behavior is unchanged.

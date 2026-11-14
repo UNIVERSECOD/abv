@@ -14,6 +14,8 @@ public class DeviceTargetPolicy {
     private final DeviceConfigRepository devices;
     @Value("${devices.allowed-targets:}")
     private String allowedTargets = "";
+    @Value("${devices.allowed-networks:}")
+    private String allowedNetworks = "";
 
     public void requireAllowed(String endpoint, Long branchId) {
         String normalized;
@@ -28,12 +30,28 @@ public class DeviceTargetPolicy {
         for (String rule : allowedTargets.split(";")) {
             String[] parts = rule.trim().split("=", 2);
             if (parts.length == 2 && scope.equals(parts[0].trim())
-                    && normalized.equals(com.hic.util.DeviceAddress.normalize(parts[1].trim()))) return;
+                    && matchesConfiguredTarget(normalized, parts[1].trim())) return;
         }
-        boolean existing = allowedTargets.isBlank() && devices.findByTenantId(tenantId).stream()
+        for (String rule : allowedNetworks.split(";")) {
+            String[] parts = rule.trim().split("=", 2);
+            if (parts.length == 2 && scope.equals(parts[0].trim())
+                    && matchesNetwork(normalized, parts[1].trim())) return;
+        }
+        boolean existing = allowedTargets.isBlank() && allowedNetworks.isBlank()
+                && devices.findByTenantId(tenantId).stream()
                 .filter(device -> Objects.equals(branchId, device.getBranchId()))
                 .anyMatch(device -> matches(normalized, device.getDeviceIp(), device.getDevicePort()));
         if (!existing) throw new BadRequestException("Bu IP və port seçilmiş ərazi üçün icazəli deyil. Quraşdırmanın cihaz ünvanı qaydasını yoxlayın.");
+    }
+
+    private boolean matchesConfiguredTarget(String normalized, String candidate) {
+        try { return normalized.equals(com.hic.util.DeviceAddress.normalize(candidate)); }
+        catch (IllegalArgumentException ignored) { return false; }
+    }
+
+    private boolean matchesNetwork(String normalized, String cidr) {
+        try { return com.hic.util.IpNetwork.parse(cidr).containsEndpoint(normalized); }
+        catch (IllegalArgumentException ignored) { return false; }
     }
 
     private boolean matches(String normalized, String candidate, Integer port) {

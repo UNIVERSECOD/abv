@@ -23,6 +23,27 @@ class DeviceTargetPolicyTest {
         assertThatThrownBy(() -> policy.requireAllowed("10.0.0.20", 5L)).isInstanceOf(RuntimeException.class);
         verify(repository, never()).findByTenantId(2L);
     }
+    @Test void scopesConfiguredNetworksByTenantAndArea() {
+        var repository = mock(DeviceConfigRepository.class);
+        var policy = new DeviceTargetPolicy(repository);
+        ReflectionTestUtils.setField(policy, "allowedNetworks", "1/5=10.100.140.0/24;2/5=192.168.50.0/24");
+        TenantContext.setTenantId(1L);
+        policy.requireAllowed("10.100.140.5:80", 5L);
+        policy.requireAllowed("10.100.140.254:8080", 5L);
+        assertThatThrownBy(() -> policy.requireAllowed("10.100.141.5:80", 5L)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> policy.requireAllowed("10.100.140.5:80", 6L)).isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> policy.requireAllowed("192.168.50.5:80", 5L)).isInstanceOf(RuntimeException.class);
+        verifyNoInteractions(repository);
+    }
+
+    @Test void malformedNetworkFailsClosedAndDisablesLegacyFallback() {
+        var repository = mock(DeviceConfigRepository.class);
+        var policy = new DeviceTargetPolicy(repository);
+        ReflectionTestUtils.setField(policy, "allowedNetworks", "1/5=10.0.0.0/99");
+        TenantContext.setTenantId(1L);
+        assertThatThrownBy(() -> policy.requireAllowed("10.0.0.5:80", 5L)).isInstanceOf(RuntimeException.class);
+        verifyNoInteractions(repository);
+    }
     @Test void preservesOnlyExistingTargetsInTheirOriginalArea() {
         var repository = mock(DeviceConfigRepository.class);
         var policy = new DeviceTargetPolicy(repository);

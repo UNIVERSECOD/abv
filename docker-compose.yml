@@ -58,6 +58,7 @@ services:
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       DEVICES_ALLOWED_TARGETS: ${DEVICES_ALLOWED_TARGETS:-}
+      DEVICES_ALLOWED_NETWORKS: ${DEVICES_ALLOWED_NETWORKS:-}
       ISAPI_BASE_URL: http://isapi:8081
       COMPUTER_IP: ${COMPUTER_IP:-192.168.1.102}
       APP_RUNTIME_DIR: /app/runtime
@@ -89,6 +90,7 @@ services:
       ISAPI_API_KEY: ${ISAPI_API_KEY:?Set ISAPI_API_KEY in .env}
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       ISAPI_ALLOWED_TARGETS: ${ISAPI_ALLOWED_TARGETS:-}
+      ISAPI_ALLOWED_NETWORKS: ${ISAPI_ALLOWED_NETWORKS:-}
       APP_RUNTIME_DIR: /app/runtime
       TZ: Asia/Baku
     # Bind to localhost only — not publicly reachable in SaaS/prod deploys

@@ -3,6 +3,7 @@ package com.abv.hrerpisapi.service;
 import com.abv.hrerpisapi.device.mapper.AnprEventMapper;
 import com.abv.hrerpisapi.device.client.AnprArchiveSearch;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,9 +18,11 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AnprEventStore {
     private final JdbcTemplate jdbc;
     private final AnprEventMapper mapper;
+    private final java.util.Set<String> ignoredShapes = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public record Capture(long id, OffsetDateTime capturedAt, String plate, Integer confidence, String channel,
                           boolean archived) {}
@@ -27,7 +30,13 @@ public class AnprEventStore {
     @Transactional
     public boolean capture(long deviceId, String xml) throws XMLStreamException {
         var event = mapper.mapPayload(xml);
-        if (event == null) return false;
+        if (event == null) {
+            String shape = mapper.describePayload(xml);
+            if (ignoredShapes.add(shape)) {
+                log.warn("Ignored ANPR stream payload shape deviceId={} {}", deviceId, shape);
+            }
+            return false;
+        }
         lockDevice(deviceId);
         String key = eventKey(event);
         var existingLive = jdbc.queryForList("""

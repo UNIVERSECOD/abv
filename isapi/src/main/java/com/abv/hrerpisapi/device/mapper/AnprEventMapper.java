@@ -11,6 +11,7 @@ import java.io.StringReader;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -29,6 +30,46 @@ public class AnprEventMapper {
         String trimmed = payload.stripLeading();
         if (trimmed.startsWith("{")) return mapJson(trimmed);
         return map(payload);
+    }
+
+    /** Returns field names only; values (including plates) are never included. */
+    public String describePayload(String payload) {
+        if (payload == null || payload.isBlank()) return "empty";
+        String trimmed = payload.stripLeading();
+        try {
+            if (trimmed.startsWith("{")) {
+                JsonNode root = JSON.readTree(trimmed);
+                JsonNode envelope = root.path("EventNotificationAlert");
+                if (!envelope.isObject()) envelope = root;
+                return "json rootFields=" + fieldNames(root) + " envelopeFields=" + fieldNames(envelope)
+                        + " eventType=" + safeName(text(envelope, "eventType"));
+            }
+            if (trimmed.startsWith("<")) {
+                XMLInputFactory factory = XMLInputFactory.newFactory();
+                factory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+                factory.setProperty(XMLInputFactory.IS_SUPPORTING_EXTERNAL_ENTITIES, false);
+                var reader = factory.createXMLStreamReader(new StringReader(trimmed));
+                var names = new java.util.LinkedHashSet<String>();
+                String root = "-";
+                String eventType = "-";
+                try {
+                    while (reader.hasNext() && names.size() < 24) {
+                        int token = reader.next();
+                        if (token != XMLStreamConstants.START_ELEMENT) continue;
+                        String name = safeName(reader.getLocalName());
+                        if ("-".equals(root)) root = name;
+                        names.add(name);
+                        if ("eventType".equals(name)) eventType = safeName(reader.getElementText().trim());
+                    }
+                } finally {
+                    reader.close();
+                }
+                return "xml root=" + root + " fields=" + names + " eventType=" + eventType;
+            }
+            return "other";
+        } catch (Exception ignored) {
+            return trimmed.startsWith("{") ? "invalid-json" : trimmed.startsWith("<") ? "invalid-xml" : "other";
+        }
     }
 
     public Event map(String payload) throws XMLStreamException {
@@ -97,6 +138,18 @@ public class AnprEventMapper {
 
     private static String first(String left, String right) {
         return left != null && !left.isBlank() ? left : right;
+    }
+
+    private static List<String> fieldNames(JsonNode node) {
+        var names = new ArrayList<String>();
+        if (node != null && node.isObject()) node.fieldNames().forEachRemaining(name -> {
+            if (names.size() < 24) names.add(safeName(name));
+        });
+        return names;
+    }
+
+    private static String safeName(String value) {
+        return value == null || !value.matches("[A-Za-z0-9_.:-]{1,64}") ? "-" : value;
     }
 
     private static String bounded(String value, int length) {

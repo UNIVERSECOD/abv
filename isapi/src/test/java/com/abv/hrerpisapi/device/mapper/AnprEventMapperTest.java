@@ -53,6 +53,14 @@ class AnprEventMapperTest {
     }
 
     @Test
+    void diagnosticDescriptionContainsShapeButNotPlateValue() {
+        String description = mapper.describePayload(CAPTURE);
+
+        assertThat(description).contains("root=EventNotificationAlert", "eventType=ANPR", "licensePlate");
+        assertThat(description).doesNotContain("10-AB-123", "capture-123");
+    }
+
+    @Test
     void ignoresInactiveAndAccessControlMessages() throws Exception {
         assertThat(mapper.map(CAPTURE.replace(">active<", ">inactive<"))).isNull();
         assertThat(mapper.map(CAPTURE.replace(">ANPR<", ">AccessControllerEvent<"))).isNull();

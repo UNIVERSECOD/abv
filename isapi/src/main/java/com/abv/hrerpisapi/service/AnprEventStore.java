@@ -26,7 +26,7 @@ public class AnprEventStore {
 
     @Transactional
     public boolean capture(long deviceId, String xml) throws XMLStreamException {
-        var event = mapper.map(xml);
+        var event = mapper.mapPayload(xml);
         if (event == null) return false;
         lockDevice(deviceId);
         String key = eventKey(event);

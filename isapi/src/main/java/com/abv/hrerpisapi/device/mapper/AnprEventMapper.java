@@ -1,5 +1,7 @@
 package com.abv.hrerpisapi.device.mapper;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
 import javax.xml.stream.XMLInputFactory;
@@ -15,11 +17,19 @@ import java.util.Set;
 
 @Component
 public class AnprEventMapper {
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> ENVELOPE_FIELDS = Set.of("eventType", "eventState", "dateTime", "channelID", "UUID");
     private static final Set<String> ANPR_FIELDS = Set.of("licensePlate", "confidenceLevel", "UUID", "line");
 
     public record Event(OffsetDateTime capturedAt, String plate, Integer confidence, String channel,
                         String uuid, String lane) {}
+
+    public Event mapPayload(String payload) throws XMLStreamException {
+        if (payload == null || payload.isBlank()) return null;
+        String trimmed = payload.stripLeading();
+        if (trimmed.startsWith("{")) return mapJson(trimmed);
+        return map(payload);
+    }
 
     public Event map(String payload) throws XMLStreamException {
         XMLInputFactory factory = XMLInputFactory.newFactory();
@@ -59,6 +69,34 @@ public class AnprEventMapper {
         } catch (DateTimeParseException ex) {
             return null;
         }
+    }
+
+    private Event mapJson(String payload) {
+        try {
+            JsonNode root = JSON.readTree(payload);
+            JsonNode envelope = root.path("EventNotificationAlert");
+            if (!envelope.isObject()) envelope = root;
+            if (!"ANPR".equalsIgnoreCase(text(envelope, "eventType"))
+                    || "inactive".equalsIgnoreCase(text(envelope, "eventState"))) return null;
+            String capturedAt = text(envelope, "dateTime");
+            if (capturedAt == null) return null;
+            JsonNode anpr = envelope.path("ANPR");
+            return new Event(OffsetDateTime.parse(capturedAt), bounded(text(anpr, "licensePlate"), 64),
+                    confidence(text(anpr, "confidenceLevel")), bounded(text(envelope, "channelID"), 32),
+                    bounded(first(text(anpr, "UUID"), text(envelope, "UUID")), 128),
+                    bounded(text(anpr, "line"), 32));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String text(JsonNode parent, String field) {
+        JsonNode value = parent.path(field);
+        return value.isMissingNode() || value.isNull() ? null : value.asText(null);
+    }
+
+    private static String first(String left, String right) {
+        return left != null && !left.isBlank() ? left : right;
     }
 
     private static String bounded(String value, int length) {

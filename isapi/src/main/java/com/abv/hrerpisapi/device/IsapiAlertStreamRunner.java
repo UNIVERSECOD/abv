@@ -266,7 +266,18 @@ public final class IsapiAlertStreamRunner implements Runnable {
                     }
                     continue;
                 }
-                if (device.isAnpr()) continue;
+                if (device.isAnpr()) {
+                    try {
+                        if (!anprEvents.capture(device.getId(), payload)) {
+                            log.debug("Ignored non-ANPR JSON stream payload from bridge device {}", device.getId());
+                        }
+                    } catch (javax.xml.stream.XMLStreamException malformed) {
+                        log.warn("Invalid ANPR payload from bridge device {}", device.getId());
+                    } catch (org.springframework.dao.DataAccessException unavailable) {
+                        throw new IOException("Unable to persist ANPR event");
+                    }
+                    continue;
+                }
 
                 try {
                     handleJson(payload);

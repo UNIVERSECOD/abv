@@ -36,6 +36,9 @@ public class DeviceWorkerService {
     @Value("${isapi.alertStream.deployExceedMaxBackoffSeconds:300}")
     private int deployExceedMaxBackoffSeconds;
 
+    @Value("${isapi.alertStream.anprMaxConnectionSeconds:600}")
+    private int anprMaxConnectionSeconds;
+
     private final Map<Long, Thread> activeThreads = new ConcurrentHashMap<>();
     private final Map<Long, IsapiAlertStreamRunner> activeRunners = new ConcurrentHashMap<>();
 
@@ -64,14 +67,16 @@ public class DeviceWorkerService {
                 eventMapper,
                 anprEvents,
                 disconnectBackoffBaseSeconds,
-                deployExceedMaxBackoffSeconds);
+                deployExceedMaxBackoffSeconds,
+                anprMaxConnectionSeconds);
         Thread t = new Thread(runner, "alertStream-device-" + device.getId());
         t.setDaemon(true);
         t.start();
         activeThreads.put(device.getId(), t);
         activeRunners.put(device.getId(), runner);
-        log.info("ActionLog.device.alertStream.start.ended deviceId={} ip={} disconnectBackoffBaseSeconds={} deployExceedMaxBackoffSeconds={}",
-                device.getId(), device.getIp(), disconnectBackoffBaseSeconds, deployExceedMaxBackoffSeconds);
+        log.info("ActionLog.device.alertStream.start.ended deviceId={} ip={} disconnectBackoffBaseSeconds={} deployExceedMaxBackoffSeconds={} anprMaxConnectionSeconds={}",
+                device.getId(), device.getIp(), disconnectBackoffBaseSeconds, deployExceedMaxBackoffSeconds,
+                anprMaxConnectionSeconds);
     }
 
     public void stopDevice(Long deviceId) {

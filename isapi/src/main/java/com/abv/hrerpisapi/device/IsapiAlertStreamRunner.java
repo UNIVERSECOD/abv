@@ -40,6 +40,7 @@ public final class IsapiAlertStreamRunner implements Runnable {
     private final AnprEventStore anprEvents;
     private final int disconnectBackoffBaseSeconds;
     private final int deployExceedMaxBackoffSeconds;
+    private final int anprMaxConnectionSeconds;
 
     private final Object processLock = new Object();
     private volatile Process activeProcess;
@@ -54,13 +55,15 @@ public final class IsapiAlertStreamRunner implements Runnable {
                                    IsapiEventMapper eventMapper,
                                    AnprEventStore anprEvents,
                                    int disconnectBackoffBaseSeconds,
-                                   int deployExceedMaxBackoffSeconds) {
+                                   int deployExceedMaxBackoffSeconds,
+                                   int anprMaxConnectionSeconds) {
         this.device = device;
         this.ingestService = ingestService;
         this.eventMapper = eventMapper;
         this.anprEvents = anprEvents;
         this.disconnectBackoffBaseSeconds = Math.max(1, disconnectBackoffBaseSeconds);
         this.deployExceedMaxBackoffSeconds = Math.max(1, deployExceedMaxBackoffSeconds);
+        this.anprMaxConnectionSeconds = Math.max(60, anprMaxConnectionSeconds);
     }
 
     @Override
@@ -111,19 +114,23 @@ public final class IsapiAlertStreamRunner implements Runnable {
                         logStopLoopEnded("stop requested");
                         return;
                     }
-                    log.info("ActionLog.device.alertStream.disconnected deviceId={} ip={} port={} retrySeconds={} reason={} curlExitCode={} curlStderrTail={}",
+                    boolean scheduledRefresh = device.isAnpr() && "28".equals(disconnected.curlExitCode());
+                    int retrySeconds = scheduledRefresh ? 1 : backoffSeconds;
+                    log.info("ActionLog.device.alertStream.disconnected deviceId={} ip={} port={} retrySeconds={} reason={} curlExitCode={} curlStderrTail={} scheduledRefresh={}",
                             device.getId(),
                             device.getIp(),
                             port,
-                            backoffSeconds,
+                            retrySeconds,
                             safe(disconnected.getMessage()),
                             disconnected.curlExitCode(),
-                            safe(disconnected.curlStderrTail()));
-                    if (!sleepBackoff(backoffSeconds)) {
+                            safe(disconnected.curlStderrTail()),
+                            scheduledRefresh);
+                    if (!sleepBackoff(retrySeconds)) {
                         logStopLoopEnded("stop requested during backoff");
                         return;
                     }
-                    backoffSeconds = Math.min(backoffSeconds * 2, MAX_DISCONNECT_BACKOFF_SECONDS);
+                    backoffSeconds = scheduledRefresh ? disconnectBackoffBaseSeconds
+                            : Math.min(backoffSeconds * 2, MAX_DISCONNECT_BACKOFF_SECONDS);
                 } catch (EOFException eof) {
                     if (isStopRequested()) {
                         logStopLoopEnded("stop requested");
@@ -200,7 +207,8 @@ public final class IsapiAlertStreamRunner implements Runnable {
                 "-H", "Accept: multipart/x-mixed-replace",
                 "-H", "Connection: keep-alive"));
         if (device.isAnpr()) {
-            command.addAll(java.util.List.of("--speed-limit", "1", "--speed-time", "90"));
+            command.addAll(java.util.List.of("--speed-limit", "1", "--speed-time", "90",
+                    "--max-time", String.valueOf(anprMaxConnectionSeconds)));
         }
         command.add(url);
         Process p = new ProcessBuilder(command)
